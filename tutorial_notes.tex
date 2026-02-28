@@ -14,11 +14,7 @@
 \usepackage{fancyhdr}
 \usepackage[section]{placeins}   % prevent floats from drifting past section boundaries
 \usepackage{float}               % provides [H] placement specifier
-\usepackage[
-  backend=biber,
-  style=numeric,
-  sorting=nyt
-]{biblatex}
+% biblatex removed: using \thebibliography for portability (no .bib file needed)
 
 % ---- Colors ----
 \definecolor{codegreen}{rgb}{0.25,0.78,0.54}
@@ -484,13 +480,17 @@ The Jacobian determinant in $d$ dimensions is:
 \subsection{Affine coupling (RealNVP-style)}
 This architecture was introduced by Dinh et~al.\ \cite{dinh2017} under
 the name \textbf{RealNVP} (``Real-valued Non-Volume Preserving
-transformations'').
+transformations''), building on the earlier NICE framework
+\cite{dinh2014} which used additive (volume-preserving) coupling layers.
 The key idea is to split the input dimensions into two groups: one group
 passes through unchanged and serves as the input to a \emph{conditioner}
 function that determines how the other group is transformed.
-Our implementation is a simplified 2D version of their architecture,
-using a single $\tanh$ unit as the conditioner instead of a deep neural
-network.
+RealNVP's affine coupling was further extended by Glow
+\cite{kingma2018}, which replaced fixed permutations with learned
+invertible $1 \times 1$ convolutions.
+Our implementation is a simplified 2D version of the RealNVP
+architecture, using a single $\tanh$ unit as the conditioner instead
+of a deep neural network.
 
 Split the input as $z = (z_a, z_b)$.
 One dimension passes through unchanged; the other receives a learned
@@ -515,9 +515,11 @@ neural networks with thousands of parameters.
 % ---- Figure: grid deformation by architecture ----
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{figures/sec6_grid_deformation.pdf}
+  \includegraphics[width=\textwidth]{figures/sec6_grid_deformation.pdf}
   \caption{%
-    How each architecture warps a regular grid through a single layer.
+    How each architecture warps a regular grid.
+    Columns show the input grid, the result after one layer, and the
+    result after ten layers.
     \textbf{Planar} (top row): the $\tanh$ bump in
     Eq.~\eqref{eq:planar} displaces grid lines along
     the direction $u$, producing a directional shear near the hyperplane
@@ -633,8 +635,13 @@ Our coupling layers use $s(z_a) = a_1 \tanh(a_2 z_a + a_3) + a_4$
 (4~parameters).
 Production flows replace this with $s(z_a) = \mathrm{ResNet}(z_a)$,
 a residual network (see Glossary) with tens of thousands of parameters,
-or \emph{neural spline flows} where the transformation is a monotonic
-rational-quadratic spline, providing much greater flexibility per layer.
+or \emph{neural spline flows} \cite{durkan2019} where the
+transformation is a monotonic rational-quadratic spline, providing
+much greater flexibility per layer.
+An alternative to coupling layers are \emph{autoregressive} flows
+\cite{kingma2016,papamakarios2017}, which condition each dimension on
+all preceding dimensions rather than on a fixed partition; these are
+more expressive per layer but slower to sample from.
 
 Automatic differentiation (via PyTorch or JAX) replaces our
 finite-difference gradients, giving exact gradients at comparable cost.
@@ -664,13 +671,15 @@ This gives the best of both worlds: fast convergence from the flow,
 unbiased samples from MCMC.
 
 \paragraph{Continuous normalizing flows.}
-Replace discrete layers with a neural ODE:
+Replace discrete layers with a neural ODE \cite{chen2018}:
 \begin{equation}
   \frac{dx}{dt} = v_\theta(x, t),
 \end{equation}
 where the log-density evolves as
 $\frac{\partial \log q}{\partial t} = -\nabla \cdot v$
 (the instantaneous change-of-variables formula).
+FFJORD \cite{grathwohl2018} made this practical by replacing the
+exact trace with a stochastic Hutchinson estimator.
 This removes the need to choose a fixed number of layers, at the cost
 of solving an ODE during training and sampling.
 
@@ -761,6 +770,48 @@ K.~Cranmer, J.~Brehmer, and G.~Louppe,
 \textit{Proceedings of the National Academy of Sciences},
 \textbf{117}(48):30055--30062, 2020.
 \href{https://arxiv.org/abs/1911.01429}{arXiv:1911.01429}.
+
+\bibitem{dinh2014}
+L.~Dinh, D.~Krueger, and Y.~Bengio,
+``NICE: Non-linear independent components estimation,''
+\textit{International Conference on Learning Representations (ICLR) Workshop}, 2015.
+\href{https://arxiv.org/abs/1410.8516}{arXiv:1410.8516}.
+
+\bibitem{kingma2018}
+D.~P. Kingma and P.~Dhariwal,
+``Glow: Generative flow with invertible 1$\times$1 convolutions,''
+\textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2018.
+\href{https://arxiv.org/abs/1807.03039}{arXiv:1807.03039}.
+
+\bibitem{durkan2019}
+C.~Durkan, A.~Bekasov, I.~Murray, and G.~Papamakarios,
+``Neural spline flows,''
+\textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2019.
+\href{https://arxiv.org/abs/1906.04032}{arXiv:1906.04032}.
+
+\bibitem{kingma2016}
+D.~P. Kingma, T.~Salimans, R.~Jozefowicz, X.~Chen, I.~Sutskever, and M.~Welling,
+``Improved variational inference with inverse autoregressive flow,''
+\textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2016.
+\href{https://arxiv.org/abs/1606.04934}{arXiv:1606.04934}.
+
+\bibitem{papamakarios2017}
+G.~Papamakarios, T.~Pavlakou, and I.~Murray,
+``Masked autoregressive flow for density estimation,''
+\textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2017.
+\href{https://arxiv.org/abs/1705.07057}{arXiv:1705.07057}.
+
+\bibitem{chen2018}
+R.~T.~Q. Chen, Y.~Rubanova, J.~Bettencourt, and D.~Duvenaud,
+``Neural ordinary differential equations,''
+\textit{Advances in Neural Information Processing Systems (NeurIPS)}, 2018.
+\href{https://arxiv.org/abs/1806.07366}{arXiv:1806.07366}.
+
+\bibitem{grathwohl2018}
+W.~Grathwohl, R.~T.~Q. Chen, J.~Bettencourt, I.~Sutskever, and D.~Duvenaud,
+``FFJORD: Free-form continuous dynamics for scalable reversible generative models,''
+\textit{International Conference on Learning Representations (ICLR)}, 2019.
+\href{https://arxiv.org/abs/1810.01367}{arXiv:1810.01367}.
 
 \end{thebibliography}
 

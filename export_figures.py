@@ -439,40 +439,56 @@ def draw_grid(ax, lines, gx, title, color_by_x=True):
     ax.set_title(title, fontsize=10)
     ax.tick_params(labelsize=7)
 
-# Hand-picked parameters for clear visual effect
-_planar_demo = [{"u": np.array([0.0, 1.5]), "w": np.array([1.2, 0.3]), "b": 0.0}]
-_radial_demo = [{"z0": np.array([0.0, 0.0]), "log_alpha": np.log(0.5), "beta": 1.8}]
-_coupling_demo = [{"dim": 0, "sa1": 0.8, "sa2": 1.0, "sa3": 0.0, "sa4": 0.0,
-                   "tb1": 1.5, "tb2": 0.8, "tb3": 0.0, "tb4": 0.0}]
+# Hand-picked parameters for clear visual effect (1 layer)
+_planar_demo_1 = [{"u": np.array([0.0, 1.5]), "w": np.array([1.2, 0.3]), "b": 0.0}]
+_radial_demo_1 = [{"z0": np.array([0.0, 0.0]), "log_alpha": np.log(0.5), "beta": 1.8}]
+_coupling_demo_1 = [{"dim": 0, "sa1": 0.8, "sa2": 1.0, "sa3": 0.0, "sa4": 0.0,
+                     "tb1": 1.5, "tb2": 0.8, "tb3": 0.0, "tb4": 0.0}]
+
+# 10-layer versions (use init functions with a fixed seed for reproducibility)
+_planar_demo_10 = init_planar(10, seed=42)
+_radial_demo_10 = init_radial(10, seed=42)
+_coupling_demo_10 = init_coupling(10, seed=42)
 
 grid_lines = make_grid_lines(_gx, _gy)
 
 architectures_demo = [
-    ("Planar", r"$z + u\,\tanh(w^\top z + b)$", planar_forward, _planar_demo),
-    ("Radial", r"$z + \beta\,h(\alpha,r)(z - z_0)$", radial_forward, _radial_demo),
-    ("Affine coupling", r"$x_b = z_b \cdot e^{s(z_a)} + t(z_a)$", coupling_forward, _coupling_demo),
+    ("Planar", r"$z + u\,\tanh(w^\top z + b)$", planar_forward, _planar_demo_1, _planar_demo_10),
+    ("Radial", r"$z + \beta\,h(\alpha,r)(z - z_0)$", radial_forward, _radial_demo_1, _radial_demo_10),
+    ("Affine coupling", r"$x_b = z_b \cdot e^{s(z_a)} + t(z_a)$", coupling_forward, _coupling_demo_1, _coupling_demo_10),
 ]
 
-fig, axes = plt.subplots(3, 2, figsize=(8, 11))
+fig, axes = plt.subplots(3, 3, figsize=(12, 11))
 
-for row, (name, eq_str, fwd_fn, demo_params) in enumerate(architectures_demo):
+for row, (name, eq_str, fwd_fn, params_1, params_10) in enumerate(architectures_demo):
     # Input grid
     draw_grid(axes[row, 0], grid_lines, _gx, f"{name}: input grid")
     axes[row, 0].set_xlim(-3.2, 3.2)
     axes[row, 0].set_ylim(-3.2, 3.2)
 
-    # Transformed grid
-    transformed = transform_lines(grid_lines, fwd_fn, demo_params)
-    draw_grid(axes[row, 1], transformed, _gx, f"{name}: one layer applied")
+    # 1-layer transformed grid
+    transformed_1 = transform_lines(grid_lines, fwd_fn, params_1)
+    draw_grid(axes[row, 1], transformed_1, _gx, f"{name}: 1 layer")
     axes[row, 1].set_xlim(-3.2, 4.5)
     axes[row, 1].set_ylim(-3.2, 4.5)
 
-    # Add equation annotation
+    # 10-layer transformed grid
+    transformed_10 = transform_lines(grid_lines, fwd_fn, params_10)
+    # Auto-compute limits for 10-layer output
+    all_pts = np.concatenate(transformed_10, axis=0)
+    margin = 0.3
+    x_lo, x_hi = all_pts[:, 0].min() - margin, all_pts[:, 0].max() + margin
+    y_lo, y_hi = all_pts[:, 1].min() - margin, all_pts[:, 1].max() + margin
+    draw_grid(axes[row, 2], transformed_10, _gx, f"{name}: 10 layers")
+    axes[row, 2].set_xlim(x_lo, x_hi)
+    axes[row, 2].set_ylim(y_lo, y_hi)
+
+    # Add equation annotation on the 1-layer panel
     axes[row, 1].text(0.98, 0.02, eq_str, transform=axes[row, 1].transAxes,
                       fontsize=8, ha="right", va="bottom", color="#555555",
                       bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
 
-fig.suptitle("How each architecture warps space (single layer)", fontsize=12, y=0.98)
+fig.suptitle("How each architecture warps space", fontsize=12, y=0.98)
 fig.tight_layout(rect=[0, 0, 1, 0.96])
 fig.savefig(OUT / "sec6_grid_deformation.pdf", bbox_inches="tight")
 plt.close(fig)
