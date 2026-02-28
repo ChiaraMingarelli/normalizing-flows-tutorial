@@ -875,7 +875,7 @@ def _(mo):
             "Ring": "ring",
             "Funnel (Neal)": "funnel",
         },
-        value="sinusoid",
+        value="Sinusoid (A, φ)",
         label="Target distribution",
     )
     arch_layers_slider = mo.ui.slider(3, 20, value=12, label="Layers per architecture", step=1)
