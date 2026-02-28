@@ -43,9 +43,10 @@ def _(mo):
     > - **Cells are reactive.** When you change a slider or edit a cell,
     >   every cell that depends on it **re-executes automatically** — like a
     >   spreadsheet. You don't need to manually re-run downstream cells.
-    > - **This means expensive cells re-run too.** If you drag an "epochs"
-    >   slider from 800 to 3000, the training will re-run and you'll wait.
-    >   Start with the defaults and increase gradually.
+    > - **Training cells require a click.** Sections with expensive training
+    >   (Sections 4, 5, 6) have a **Run** button. Adjust the sliders first,
+    >   then click the button to start training. This prevents long waits
+    >   on startup or when tweaking settings.
     > - **You can edit any cell.** Click on a code cell to modify it — change
     >   a distribution, tweak a hyperparameter, add a plot. The notebook
     >   will re-execute everything that depends on your change.
@@ -345,23 +346,23 @@ def _(GridSpec, init_planar, layer_slider, np, planar_forward, plt):
     _fig = plt.figure(figsize=(12, 3.5))
     _gs = GridSpec(1, _n_show + 1, figure=_fig, wspace=0.05)
 
-    for idx, k in enumerate(_layer_indices):
-        _ax = _fig.add_subplot(_gs[0, idx])
-        if k == 0:
-            pts = _z
+    for _idx, _k in enumerate(_layer_indices):
+        _ax = _fig.add_subplot(_gs[0, _idx])
+        if _k == 0:
+            _pts = _z
         else:
-            pts, _ = planar_forward(_z, _params[:k])
+            _pts, _ = planar_forward(_z, _params[:_k])
 
-        _ax.scatter(pts[:, 0], pts[:, 1], s=0.4, alpha=0.3, c="#70c8a0", rasterized=True)
+        _ax.scatter(_pts[:, 0], _pts[:, 1], s=0.4, alpha=0.3, c="#70c8a0", rasterized=True)
         _ax.set_xlim(-4.5, 4.5)
         _ax.set_ylim(-4.5, 4.5)
         _ax.set_aspect("equal")
-        if idx == 0:
+        if _idx == 0:
             _ax.set_title("Base z~N(0,I)", fontsize=9)
         else:
-            _ax.set_title(f"After {k} layer{'s' if k > 1 else ''}", fontsize=9)
+            _ax.set_title(f"After {_k} layer{'s' if _k > 1 else ''}", fontsize=9)
         _ax.tick_params(labelsize=6)
-        if idx > 0:
+        if _idx > 0:
             _ax.set_yticklabels([])
 
     _fig.suptitle(f"Gaussian → {_n_layers} planar layers: watching the distribution deform",
@@ -494,8 +495,9 @@ def _(A_RANGE, PHI_RANGE, np):
 def _(mo):
     train_layers_slider = mo.ui.slider(1, 20, value=8, label="Planar layers", step=1)
     train_epochs_slider = mo.ui.slider(100, 2000, value=800, label="Training epochs", step=100)
-    mo.hstack([train_layers_slider, train_epochs_slider], gap=2)
-    return train_epochs_slider, train_layers_slider
+    train_run_btn = mo.ui.run_button(label="Train flow")
+    mo.hstack([train_layers_slider, train_epochs_slider, train_run_btn], gap=2)
+    return train_epochs_slider, train_layers_slider, train_run_btn
 
 
 @app.cell
@@ -509,6 +511,7 @@ def _(
     flow_to_physical,
     init_planar,
     log_posterior,
+    mo,
     np,
     phi_vals,
     planar_forward,
@@ -517,7 +520,13 @@ def _(
     train_epochs_slider,
     train_flow,
     train_layers_slider,
+    train_run_btn,
 ):
+    mo.stop(
+        not train_run_btn.value,
+        mo.md("*Adjust sliders above, then click **Train flow** to run.*"),
+    )
+
     _nL = train_layers_slider.value
     _nE = train_epochs_slider.value
 
@@ -545,10 +554,10 @@ def _(
     _ax0.set_ylabel("Loss (KL divergence)")
     _ax0.set_title("Training loss", fontsize=11)
     if len(_loss_hist) > 50:
-        ymin = min(_loss_hist[50:])
-        ymax = max(_loss_hist[50:])
-        margin = (ymax - ymin) * 0.2
-        _ax0.set_ylim(ymin - margin, ymax + margin)
+        _ymin = min(_loss_hist[50:])
+        _ymax = max(_loss_hist[50:])
+        _margin = (_ymax - _ymin) * 0.2
+        _ax0.set_ylim(_ymin - _margin, _ymax + _margin)
 
     # Exact posterior
     _ax1 = _fig.add_subplot(_gs[0, 1])
@@ -653,8 +662,9 @@ def _(mo):
     mcmc_steps_slider = mo.ui.slider(500, 10000, value=5000, label="MCMC steps", step=500)
     flow_layers_compare = mo.ui.slider(1, 20, value=8, label="Flow layers", step=1)
     flow_epochs_compare = mo.ui.slider(200, 2000, value=800, label="Flow epochs", step=100)
-    mo.hstack([mcmc_steps_slider, flow_layers_compare, flow_epochs_compare], gap=2)
-    return flow_epochs_compare, flow_layers_compare, mcmc_steps_slider
+    compare_run_btn = mo.ui.run_button(label="Run comparison")
+    mo.hstack([mcmc_steps_slider, flow_layers_compare, flow_epochs_compare, compare_run_btn], gap=2)
+    return compare_run_btn, flow_epochs_compare, flow_layers_compare, mcmc_steps_slider
 
 
 @app.cell
@@ -666,6 +676,7 @@ def _(
     PHI_RANGE,
     TRUE_A,
     TRUE_PHI,
+    compare_run_btn,
     compute_ess,
     flow_epochs_compare,
     flow_layers_compare,
@@ -673,6 +684,7 @@ def _(
     init_planar,
     log_posterior,
     mcmc_steps_slider,
+    mo,
     np,
     phi_vals,
     planar_forward,
@@ -681,6 +693,10 @@ def _(
     run_mcmc,
     train_flow,
 ):
+    mo.stop(
+        not compare_run_btn.value,
+        mo.md("*Adjust sliders above, then click **Run comparison** to run.*"),
+    )
 
     _n_mcmc = mcmc_steps_slider.value
     _nL = flow_layers_compare.value
@@ -880,8 +896,9 @@ def _(mo):
     )
     arch_layers_slider = mo.ui.slider(3, 20, value=12, label="Layers per architecture", step=1)
     arch_epochs_slider = mo.ui.slider(200, 3000, value=800, label="Training epochs", step=200)
-    mo.hstack([dist_selector, arch_layers_slider, arch_epochs_slider], gap=2)
-    return arch_epochs_slider, arch_layers_slider, dist_selector
+    arch_run_btn = mo.ui.run_button(label="Train all architectures")
+    mo.hstack([dist_selector, arch_layers_slider, arch_epochs_slider, arch_run_btn], gap=2)
+    return arch_epochs_slider, arch_layers_slider, arch_run_btn, dist_selector
 
 
 @app.cell
@@ -948,12 +965,14 @@ def _(
     GridSpec,
     arch_epochs_slider,
     arch_layers_slider,
+    arch_run_btn,
     coupling_forward,
     dist_selector,
     flow_to_physical,
     init_coupling,
     init_planar,
     init_radial,
+    mo,
     np,
     planar_forward,
     plt,
@@ -961,6 +980,10 @@ def _(
     test_distributions,
     train_flow,
 ):
+    mo.stop(
+        not arch_run_btn.value,
+        mo.md("*Choose a distribution and adjust sliders above, then click **Train all architectures** to run.*"),
+    )
 
     _dist_key = dist_selector.value
     _dist = test_distributions[_dist_key]
