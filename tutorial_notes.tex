@@ -398,6 +398,26 @@ This is the simplified version of the architecture used in
 DINGO and other production tools, where $s$ and $t$ are deep
 neural networks with thousands of parameters.
 
+% ---- Figure: grid deformation by architecture ----
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.85\textwidth]{figures/sec6_grid_deformation.pdf}
+  \caption{%
+    How each architecture warps a regular grid through a single layer.
+    \textbf{Planar} (top): the $\tanh$ bump displaces grid lines along
+    the direction $u$, producing a directional shear near the hyperplane
+    $w^\top z + b = 0$.
+    \textbf{Radial} (middle): space expands or contracts radially around
+    a center $z_0$, preserving angular symmetry.
+    \textbf{Affine coupling} (bottom): one coordinate is held fixed while
+    the other receives a conditional scale and shift, producing an
+    axis-aligned but nonlinear deformation.
+    Grid lines are colored by original $x$-position to track how
+    regions of space move.
+  }
+  \label{fig:grid-deformation}
+\end{figure}
+
 \subsection{Comparison across target distributions}
 
 We test all three architectures on five target distributions of

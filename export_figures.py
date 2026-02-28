@@ -390,6 +390,94 @@ fig.tight_layout()
 fig.savefig(OUT / "sec6_architecture_comparison.pdf", bbox_inches="tight")
 plt.close(fig)
 
+# ==================================================================
+# Figure 6: Grid deformation by architecture (Section 6)
+# ==================================================================
+print("Generating sec6_grid_deformation.pdf ...")
+
+# Build a regular grid of points
+_gn = 20  # grid lines per axis
+_gx = np.linspace(-2.5, 2.5, _gn)
+_gy = np.linspace(-2.5, 2.5, _gn)
+
+# Collect grid line segments (horizontal and vertical)
+def make_grid_lines(gx, gy):
+    """Return list of (xs, ys) arrays for horizontal and vertical grid lines."""
+    lines = []
+    dense = np.linspace(0, 1, 80)
+    for y in gy:
+        xs = gx[0] + (gx[-1] - gx[0]) * dense
+        ys = np.full_like(xs, y)
+        lines.append(np.column_stack([xs, ys]))
+    for x in gx:
+        ys = gy[0] + (gy[-1] - gy[0]) * dense
+        xs = np.full_like(ys, x)
+        lines.append(np.column_stack([xs, ys]))
+    return lines
+
+def transform_lines(lines, forward_fn, params):
+    """Transform grid lines through a flow (batch each line)."""
+    out = []
+    for pts in lines:
+        transformed, _ = forward_fn(pts, params)
+        out.append(transformed)
+    return out
+
+def draw_grid(ax, lines, gx, title, color_by_x=True):
+    """Draw grid lines colored by original x-position."""
+    cmap = plt.cm.coolwarm
+    for pts in lines:
+        if color_by_x:
+            # Normalize original x range to [0,1] for color
+            c = cmap(0.5)  # default
+            mid_x = np.mean(pts[:, 0])
+            c = cmap((mid_x - gx[0]) / (gx[-1] - gx[0]))
+        else:
+            c = "#555555"
+        ax.plot(pts[:, 0], pts[:, 1], lw=0.6, color=c, alpha=0.7)
+    ax.set_aspect("equal")
+    ax.set_title(title, fontsize=10)
+    ax.tick_params(labelsize=7)
+
+# Hand-picked parameters for clear visual effect
+_planar_demo = [{"u": np.array([0.0, 1.5]), "w": np.array([1.2, 0.3]), "b": 0.0}]
+_radial_demo = [{"z0": np.array([0.0, 0.0]), "log_alpha": np.log(0.5), "beta": 1.8}]
+_coupling_demo = [{"dim": 0, "sa1": 0.8, "sa2": 1.0, "sa3": 0.0, "sa4": 0.0,
+                   "tb1": 1.5, "tb2": 0.8, "tb3": 0.0, "tb4": 0.0}]
+
+grid_lines = make_grid_lines(_gx, _gy)
+
+architectures_demo = [
+    ("Planar", r"$z + u\,\tanh(w^\top z + b)$", planar_forward, _planar_demo),
+    ("Radial", r"$z + \beta\,h(\alpha,r)(z - z_0)$", radial_forward, _radial_demo),
+    ("Affine coupling", r"$x_b = z_b \cdot e^{s(z_a)} + t(z_a)$", coupling_forward, _coupling_demo),
+]
+
+fig, axes = plt.subplots(3, 2, figsize=(8, 11))
+
+for row, (name, eq_str, fwd_fn, demo_params) in enumerate(architectures_demo):
+    # Input grid
+    draw_grid(axes[row, 0], grid_lines, _gx, f"{name}: input grid")
+    axes[row, 0].set_xlim(-3.2, 3.2)
+    axes[row, 0].set_ylim(-3.2, 3.2)
+
+    # Transformed grid
+    transformed = transform_lines(grid_lines, fwd_fn, demo_params)
+    draw_grid(axes[row, 1], transformed, _gx, f"{name}: one layer applied")
+    axes[row, 1].set_xlim(-3.2, 4.5)
+    axes[row, 1].set_ylim(-3.2, 4.5)
+
+    # Add equation annotation
+    axes[row, 1].text(0.98, 0.02, eq_str, transform=axes[row, 1].transAxes,
+                      fontsize=8, ha="right", va="bottom", color="#555555",
+                      bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
+
+fig.suptitle("How each architecture warps space (single layer)", fontsize=12, y=0.98)
+fig.tight_layout(rect=[0, 0, 1, 0.96])
+fig.savefig(OUT / "sec6_grid_deformation.pdf", bbox_inches="tight")
+plt.close(fig)
+
+
 print(f"\nDone. Figures saved to {OUT}/")
 print("Files:")
 for f in sorted(OUT.glob("*.pdf")):
