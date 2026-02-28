@@ -12,6 +12,8 @@
 \usepackage{subcaption}
 \usepackage{listings}
 \usepackage{fancyhdr}
+\usepackage[section]{placeins}   % prevent floats from drifting past section boundaries
+\usepackage{float}               % provides [H] placement specifier
 \usepackage[
   backend=biber,
   style=numeric,
@@ -76,6 +78,85 @@ The notebook and this document are available at
 \url{https://github.com/ChiaraMingarelli/normalizing-flows-tutorial}.
 \end{abstract}
 
+% ---- Glossary of ML terms ----
+\vspace{1em}
+\noindent\textbf{Glossary of machine-learning terms used in this tutorial.}
+These notes are written for physicists familiar with Bayesian inference
+and MCMC but not with machine-learning terminology.
+The table below collects terms that appear throughout the text.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}p{0.22\textwidth}p{0.74\textwidth}@{}}
+\toprule
+\textbf{Term} & \textbf{Definition} \\
+\midrule
+Normalizing flow &
+  An invertible, differentiable map $f_\theta$ that transforms
+  (``flows'') a simple base distribution into a complex target
+  distribution. ``Normalizing'' refers to the fact that the
+  change-of-variables formula keeps the density properly normalized. \\[4pt]
+Base distribution &
+  The simple starting distribution (typically a standard Gaussian
+  $\mathcal{N}(0, I)$) from which we draw samples before pushing
+  them through the flow. \\[4pt]
+Pushforward &
+  The distribution obtained by applying a map $f$ to samples from
+  a source distribution. If $z \sim q_0$, the pushforward of $q_0$
+  through $f$ is the distribution of $x = f(z)$. \\[4pt]
+KL divergence &
+  The Kullback--Leibler divergence $D_\mathrm{KL}(q \| p) =
+  \int q \ln(q/p)\,dx$ measures how one probability distribution
+  $q$ differs from a reference distribution $p$. It is non-negative
+  and zero only when $q = p$. \\[4pt]
+Mode-seeking / mode-covering &
+  $D_\mathrm{KL}(q\|p)$ is \emph{mode-seeking}: it penalizes $q$
+  for placing mass where $p$ is small, so $q$ tends to concentrate
+  on the highest peak of $p$.
+  $D_\mathrm{KL}(p\|q)$ is \emph{mode-covering}: it penalizes $q$
+  for missing any region where $p$ has mass, so $q$ spreads out to
+  cover all modes. \\[4pt]
+Epoch &
+  One full pass through the training procedure. In our setup, one epoch
+  means drawing a fresh batch of base samples, computing the loss, and
+  updating the parameters once. \\[4pt]
+Batch (batch size) &
+  The number of samples drawn from the base distribution in each
+  training step. Larger batches give lower-variance gradient estimates
+  but cost more memory. \\[4pt]
+Learning rate &
+  The step size used by the optimizer when updating parameters. Too
+  large and training diverges; too small and convergence is slow. \\[4pt]
+Conditioner &
+  In a coupling layer, the function (here $s$ and $t$) that computes
+  the scale and shift parameters from the untransformed variables.
+  In toy implementations this is a simple $\tanh$ function; in
+  production flows it is a deep neural network. \\[4pt]
+ResNet (residual network) &
+  A neural network architecture where each layer computes a residual
+  $F(x)$ and adds it to its input: $\mathrm{output} = x + F(x)$.
+  This ``skip connection'' makes very deep networks easier to train. \\[4pt]
+Neural spline flow &
+  A flow architecture where the transformation in each coupling layer
+  is a monotonic piecewise rational-quadratic spline, giving much
+  greater flexibility than an affine (scale-and-shift)
+  transformation. \\[4pt]
+Amortization &
+  Training a single network to produce posteriors for many different
+  datasets, rather than retraining for each new observation. \\[4pt]
+Simulation-based inference (SBI) &
+  A family of methods that learn the posterior from simulated
+  $(\theta, d)$ pairs when the likelihood $p(d|\theta)$ cannot be
+  written in closed form but can be sampled via forward simulation. \\[4pt]
+RealNVP &
+  ``Real-valued Non-Volume Preserving transformations''
+  \cite{dinh2017}---the paper that introduced affine coupling layers.
+  See Section~\ref{sec:architectures} for details. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \tableofcontents
 \newpage
 
@@ -108,7 +189,7 @@ Figure~\ref{fig:data-posterior} shows the simulated data and
 the resulting posterior, with the curved ridge clearly visible.
 
 % ---- Figure: data + posterior ----
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{figures/sec1_data_and_posterior.pdf}
   \caption{%
@@ -210,7 +291,7 @@ number of planar layers, each warping the distribution along one
 learned direction.
 
 % ---- Figure: layer-by-layer deformation ----
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{figures/sec3_layer_deformation.pdf}
   \caption{%
@@ -280,7 +361,7 @@ over 800 epochs, and the trained flow produces samples that closely
 match the exact posterior.
 
 % ---- Figure: training convergence ----
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{figures/sec4_training.pdf}
   \caption{%
@@ -347,7 +428,7 @@ on the sinusoidal posterior from Section~\ref{sec:problem}.
 \end{table}
 
 % ---- Figure: MCMC vs flow ----
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{figures/sec5_mcmc_vs_flow.pdf}
   \caption{%
@@ -401,6 +482,16 @@ The Jacobian determinant in $d$ dimensions is:
 \end{equation}
 
 \subsection{Affine coupling (RealNVP-style)}
+This architecture was introduced by Dinh et~al.\ \cite{dinh2017} under
+the name \textbf{RealNVP} (``Real-valued Non-Volume Preserving
+transformations'').
+The key idea is to split the input dimensions into two groups: one group
+passes through unchanged and serves as the input to a \emph{conditioner}
+function that determines how the other group is transformed.
+Our implementation is a simplified 2D version of their architecture,
+using a single $\tanh$ unit as the conditioner instead of a deep neural
+network.
+
 Split the input as $z = (z_a, z_b)$.
 One dimension passes through unchanged; the other receives a learned
 scale and shift conditioned on the first:
@@ -422,7 +513,7 @@ DINGO and other production tools, where $s$ and $t$ are deep
 neural networks with thousands of parameters.
 
 % ---- Figure: grid deformation by architecture ----
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{figures/sec6_grid_deformation.pdf}
   \caption{%
@@ -461,7 +552,7 @@ representative comparison):
 \end{enumerate}
 
 % ---- Figure: architecture comparison ----
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{figures/sec6_architecture_comparison.pdf}
   \caption{%
@@ -515,6 +606,14 @@ binary coalescence (CBC) parameter estimation---15+ dimensional
 posteriors with coupling layers whose conditioners are deep residual
 networks (thousands of parameters per layer), trained with automatic
 differentiation on GPUs.
+A \emph{conditioner} is the function inside a coupling layer that
+computes the transformation parameters from the untransformed
+variables---in our toy model this is a simple $\tanh$ function
+(Eq.~\ref{eq:coupling}), but in DINGO it is a deep
+\emph{residual network} (ResNet), a neural network architecture in
+which each layer adds a learned residual to its input
+($\mathrm{output} = x + F(x)$), making it possible to train very deep
+networks without degradation.
 Crucially, DINGO uses \emph{simulation-based inference}: it trains on
 simulated pairs $(\theta_i, d_i) \sim p(\theta)\,p(d|\theta)$ and
 learns the conditional posterior $p(\theta | d)$ amortized over many
@@ -528,13 +627,14 @@ accelerate evidence computation.
 
 \paragraph{Architectural upgrades.}
 The key difference from our toy implementation is in the
-\emph{conditioner}.
+\emph{conditioner}---the function inside a coupling layer that computes
+the scale and shift from the untransformed variables (see Glossary).
 Our coupling layers use $s(z_a) = a_1 \tanh(a_2 z_a + a_3) + a_4$
 (4~parameters).
-Production flows use $s(z_a) = \mathrm{ResNet}(z_a)$ with tens of
-thousands of parameters, or \emph{neural spline flows} where the
-transformation is a monotonic rational-quadratic spline, providing
-much greater flexibility per layer.
+Production flows replace this with $s(z_a) = \mathrm{ResNet}(z_a)$,
+a residual network (see Glossary) with tens of thousands of parameters,
+or \emph{neural spline flows} where the transformation is a monotonic
+rational-quadratic spline, providing much greater flexibility per layer.
 
 Automatic differentiation (via PyTorch or JAX) replaces our
 finite-difference gradients, giving exact gradients at comparable cost.
