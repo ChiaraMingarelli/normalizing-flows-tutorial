@@ -4,9 +4,6 @@ __generated_with = "0.20.2"
 app = marimo.App(width="medium")
 
 
-# ============================================================
-# CELL: Imports
-# ============================================================
 @app.cell
 def _():
     import marimo as mo
@@ -32,95 +29,77 @@ def _():
         "font.size": 10,
         "figure.dpi": 120,
     })
-    return mo, np, plt, mcolors, GridSpec, partial, rng_global
+    return GridSpec, mo, np, plt
 
 
-# ============================================================
-# CELL: How marimo works
-# ============================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        > **⚡ How this notebook works**
-        >
-        > This tutorial is built with [marimo](https://marimo.io), a reactive
-        > Python notebook. A few things to know:
-        >
-        > - **Cells are reactive.** When you change a slider or edit a cell,
-        >   every cell that depends on it **re-executes automatically** — like a
-        >   spreadsheet. You don't need to manually re-run downstream cells.
-        > - **This means expensive cells re-run too.** If you drag an "epochs"
-        >   slider from 800 to 3000, the training will re-run and you'll wait.
-        >   Start with the defaults and increase gradually.
-        > - **You can edit any cell.** Click on a code cell to modify it — change
-        >   a distribution, tweak a hyperparameter, add a plot. The notebook
-        >   will re-execute everything that depends on your change.
-        > - **To run this notebook:** `marimo edit tutorial.py`
-        >   (or `marimo run tutorial.py` for a read-only app).
-        """
-    )
+    mo.md(r"""
+    > **⚡ How this notebook works**
+    >
+    > This tutorial is built with [marimo](https://marimo.io), a reactive
+    > Python notebook. A few things to know:
+    >
+    > - **Cells are reactive.** When you change a slider or edit a cell,
+    >   every cell that depends on it **re-executes automatically** — like a
+    >   spreadsheet. You don't need to manually re-run downstream cells.
+    > - **This means expensive cells re-run too.** If you drag an "epochs"
+    >   slider from 800 to 3000, the training will re-run and you'll wait.
+    >   Start with the defaults and increase gradually.
+    > - **You can edit any cell.** Click on a code cell to modify it — change
+    >   a distribution, tweak a hyperparameter, add a plot. The notebook
+    >   will re-execute everything that depends on your change.
+    > - **To run this notebook:** `marimo edit tutorial.py`
+    >   (or `marimo run tutorial.py` for a read-only app).
+    """)
     return
 
 
-# ============================================================
-# CELL: Title
-# ============================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        # Normalizing Flows for Bayesian Inference
+    mo.md(r"""
+    # Normalizing Flows for Bayesian Inference
 
-        **An interactive tutorial for physics graduate students**
+    **An interactive tutorial for physics graduate students**
 
-        ---
+    ---
 
-        You know how to write down a posterior:
+    You know how to write down a posterior:
 
-        $$p(\theta \mid d) = \frac{p(d \mid \theta)\, p(\theta)}{p(d)}$$
+    $$p(\theta \mid d) = \frac{p(d \mid \theta)\, p(\theta)}{p(d)}$$
 
-        You know how to sample from it with MCMC. This tutorial introduces a
-        fundamentally different approach: **learn an invertible map** that transforms
-        a simple Gaussian into the posterior, then generate independent samples
-        by pushing Gaussian draws through the map.
+    You know how to sample from it with MCMC. This tutorial introduces a
+    fundamentally different approach: **learn an invertible map** that transforms
+    a simple Gaussian into the posterior, then generate independent samples
+    by pushing Gaussian draws through the map.
 
-        These are called **normalizing flows**, and they're increasingly used in
-        gravitational-wave inference, cosmology, and particle physics.
+    These are called **normalizing flows**, and they're increasingly used in
+    gravitational-wave inference, cosmology, and particle physics.
 
-        **Prerequisites:** Bayesian inference, MCMC (you've run a chain before),
-        basic calculus and linear algebra.
-        """
-    )
+    **Prerequisites:** Bayesian inference, MCMC (you've run a chain before),
+    basic calculus and linear algebra.
+    """)
     return
 
 
-# ============================================================
-# CELL: Section 1 header
-# ============================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 1. The problem: sampling from posteriors is expensive
+    mo.md(r"""
+    ## 1. The problem: sampling from posteriors is expensive
 
-        Consider a simple inference problem. We observe noisy data from a sinusoidal signal:
+    Consider a simple inference problem. We observe noisy data from a sinusoidal signal:
 
-        $$d(t) = A \sin(2\pi t + \varphi) + n(t), \qquad n \sim \mathcal{N}(0, \sigma^2)$$
+    $$d(t) = A \sin(2\pi t + \varphi) + n(t), \qquad n \sim \mathcal{N}(0, \sigma^2)$$
 
-        and want to infer the amplitude $A$ and phase $\varphi$. The posterior
-        $p(A, \varphi \mid d)$ has a **curved ridge** — there's a degeneracy between
-        amplitude and phase that creates a banana-shaped distribution.
+    and want to infer the amplitude $A$ and phase $\varphi$. The posterior
+    $p(A, \varphi \mid d)$ has a **curved ridge** — there's a degeneracy between
+    amplitude and phase that creates a banana-shaped distribution.
 
-        Let's set this up and see what the posterior looks like.
-        """
-    )
+    Let's set this up and see what the posterior looks like.
+    """)
     return
 
 
-# ============================================================
-# CELL: Define the inference problem
-# ============================================================
 @app.cell
 def _(np):
     # Ground truth
@@ -162,15 +141,32 @@ def _(np):
         ll[~mask] = -np.inf
         return ll
 
-    return (TRUE_A, TRUE_PHI, SIGMA, N_DATA, t_obs, data_obs,
-            A_RANGE, PHI_RANGE, log_likelihood, log_posterior, log_posterior_grid)
+    return (
+        A_RANGE,
+        PHI_RANGE,
+        SIGMA,
+        TRUE_A,
+        TRUE_PHI,
+        data_obs,
+        log_posterior,
+        log_posterior_grid,
+        t_obs,
+    )
 
 
-# ============================================================
-# CELL: Plot exact posterior
-# ============================================================
 @app.cell
-def _(np, plt, A_RANGE, PHI_RANGE, TRUE_A, TRUE_PHI, log_posterior_grid, t_obs, data_obs, SIGMA):
+def _(
+    A_RANGE,
+    PHI_RANGE,
+    SIGMA,
+    TRUE_A,
+    TRUE_PHI,
+    data_obs,
+    log_posterior_grid,
+    np,
+    plt,
+    t_obs,
+):
     GRID_N = 100
     A_vals = np.linspace(A_RANGE[0], A_RANGE[1], GRID_N)
     phi_vals = np.linspace(PHI_RANGE[0], PHI_RANGE[1], GRID_N)
@@ -178,116 +174,108 @@ def _(np, plt, A_RANGE, PHI_RANGE, TRUE_A, TRUE_PHI, log_posterior_grid, t_obs, 
     lp_grid = log_posterior_grid(A_grid, phi_grid)
     prob_grid = np.exp(lp_grid - np.nanmax(lp_grid))
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    _fig, _axes = plt.subplots(1, 2, figsize=(10, 4))
 
     # Left: data
-    ax = axes[0]
-    t_fine = np.linspace(0, 1, 200)
-    ax.plot(t_fine, TRUE_A * np.sin(2 * np.pi * t_fine + TRUE_PHI),
+    _ax = _axes[0]
+    _t_fine = np.linspace(0, 1, 200)
+    _ax.plot(_t_fine, TRUE_A * np.sin(2 * np.pi * _t_fine + TRUE_PHI),
             color="#3cb8c8", lw=1.5, label="true signal")
-    ax.errorbar(t_obs, data_obs, yerr=SIGMA, fmt="o", color="#e8a060",
+    _ax.errorbar(t_obs, data_obs, yerr=SIGMA, fmt="o", color="#e8a060",
                 markersize=5, capsize=3, label="data")
-    ax.set_xlabel("t")
-    ax.set_ylabel("d(t)")
-    ax.legend(fontsize=8, loc="upper right")
-    ax.set_title("Observed data", fontsize=11)
+    _ax.set_xlabel("t")
+    _ax.set_ylabel("d(t)")
+    _ax.legend(fontsize=8, loc="upper right")
+    _ax.set_title("Observed data", fontsize=11)
 
     # Right: posterior
-    ax = axes[1]
-    ax.contourf(A_vals, phi_vals, prob_grid, levels=20, cmap="viridis")
-    ax.axvline(TRUE_A, color="white", ls="--", lw=0.8, alpha=0.4)
-    ax.axhline(TRUE_PHI, color="white", ls="--", lw=0.8, alpha=0.4)
-    ax.plot(TRUE_A, TRUE_PHI, "w+", markersize=10, mew=1.5)
-    ax.set_xlabel("Amplitude A")
-    ax.set_ylabel("Phase φ")
-    ax.set_title("Posterior p(A, φ | d)", fontsize=11)
+    _ax = _axes[1]
+    _ax.contourf(A_vals, phi_vals, prob_grid, levels=20, cmap="viridis")
+    _ax.axvline(TRUE_A, color="white", ls="--", lw=0.8, alpha=0.4)
+    _ax.axhline(TRUE_PHI, color="white", ls="--", lw=0.8, alpha=0.4)
+    _ax.plot(TRUE_A, TRUE_PHI, "w+", markersize=10, mew=1.5)
+    _ax.set_xlabel("Amplitude A")
+    _ax.set_ylabel("Phase φ")
+    _ax.set_title("Posterior p(A, φ | d)", fontsize=11)
 
-    fig.tight_layout()
-    fig
-    return GRID_N, A_vals, phi_vals, prob_grid
+    _fig.tight_layout()
+    _fig
+    return A_vals, GRID_N, phi_vals, prob_grid
 
 
-# ============================================================
-# CELL: Why MCMC hurts
-# ============================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        The posterior has a **curved ridge** — the data are nearly as well fit by
-        slightly increasing $A$ while shifting $\varphi$ to compensate. This
-        amplitude–phase degeneracy is a preview of the kinds of correlations that
-        appear in gravitational-wave parameter estimation (e.g., distance–inclination).
+    mo.md(r"""
+    The posterior has a **curved ridge** — the data are nearly as well fit by
+    slightly increasing $A$ while shifting $\varphi$ to compensate. This
+    amplitude–phase degeneracy is a preview of the kinds of correlations that
+    appear in gravitational-wave parameter estimation (e.g., distance–inclination).
 
-        MCMC handles this, but at a cost. A Metropolis-Hastings chain with isotropic
-        proposals spends most of its time proposing steps *perpendicular* to the ridge,
-        which get rejected. The result: highly correlated samples and an effective
-        sample size (ESS) much smaller than the chain length.
+    MCMC handles this, but at a cost. A Metropolis-Hastings chain with isotropic
+    proposals spends most of its time proposing steps *perpendicular* to the ridge,
+    which get rejected. The result: highly correlated samples and an effective
+    sample size (ESS) much smaller than the chain length.
 
-        **Can we do better?** What if, instead of walking through the posterior one
-        step at a time, we could learn a function that *maps* a simple distribution
-        directly onto the posterior — and then generate as many independent samples
-        as we want?
+    **Can we do better?** What if, instead of walking through the posterior one
+    step at a time, we could learn a function that *maps* a simple distribution
+    directly onto the posterior — and then generate as many independent samples
+    as we want?
 
-        ---
+    ---
 
-        ## 2. The core idea: change of variables
+    ## 2. The core idea: change of variables
 
-        Suppose we have an invertible, differentiable map $f: \mathbb{R}^d \to \mathbb{R}^d$.
-        If $z \sim q_0(z)$ (a simple base distribution, say a Gaussian), then $x = f(z)$
-        has density:
+    Suppose we have an invertible, differentiable map $f: \mathbb{R}^d \to \mathbb{R}^d$.
+    If $z \sim q_0(z)$ (a simple base distribution, say a Gaussian), then $x = f(z)$
+    has density:
 
-        $$q(x) = q_0\!\left(f^{-1}(x)\right) \left|\det \frac{\partial f^{-1}}{\partial x}\right|
-        = q_0(z) \left|\det \frac{\partial f}{\partial z}\right|^{-1}$$
+    $$q(x) = q_0\!\left(f^{-1}(x)\right) \left|\det \frac{\partial f^{-1}}{\partial x}\right|
+    = q_0(z) \left|\det \frac{\partial f}{\partial z}\right|^{-1}$$
 
-        This is just the change-of-variables formula from calculus, applied to
-        probability densities. The absolute value of the Jacobian determinant
-        accounts for how $f$ stretches or compresses volume.
+    This is just the change-of-variables formula from calculus, applied to
+    probability densities. The absolute value of the Jacobian determinant
+    accounts for how $f$ stretches or compresses volume.
 
-        **The plan:**
+    **The plan:**
 
-        1. Choose a parametric family of invertible maps $f_\theta$
-        2. Adjust $\theta$ until the pushforward $q_\theta(x)$ matches the target posterior $p(x)$
-        3. Sample: draw $z \sim \mathcal{N}(0, I)$, compute $x = f_\theta(z)$, done
+    1. Choose a parametric family of invertible maps $f_\theta$
+    2. Adjust $\theta$ until the pushforward $q_\theta(x)$ matches the target posterior $p(x)$
+    3. Sample: draw $z \sim \mathcal{N}(0, I)$, compute $x = f_\theta(z)$, done
 
-        Every sample is **independent** (no chain, no burn-in, no thinning), and
-        the cost of generating each sample is just one forward pass through $f_\theta$.
+    Every sample is **independent** (no chain, no burn-in, no thinning), and
+    the cost of generating each sample is just one forward pass through $f_\theta$.
 
-        ---
+    ---
 
-        ## 3. Planar flows: the simplest architecture
+    ## 3. Planar flows: the simplest architecture
 
-        The simplest invertible layer is the **planar flow** (Rezende & Mohamed, 2015):
+    The simplest invertible layer is the **planar flow** (Rezende & Mohamed, 2015):
 
-        $$f(z) = z + u \tanh(w^\top z + b)$$
+    $$f(z) = z + u \tanh(w^\top z + b)$$
 
-        where $u, w \in \mathbb{R}^2$ and $b \in \mathbb{R}$ are learnable parameters —
-        just **5 numbers** per layer. This adds a tanh "bump" in the direction $u$,
-        with the bump's location and orientation controlled by $w$ and $b$.
+    where $u, w \in \mathbb{R}^2$ and $b \in \mathbb{R}$ are learnable parameters —
+    just **5 numbers** per layer. This adds a tanh "bump" in the direction $u$,
+    with the bump's location and orientation controlled by $w$ and $b$.
 
-        The Jacobian determinant has a closed-form expression:
+    The Jacobian determinant has a closed-form expression:
 
-        $$\left|\det \frac{\partial f}{\partial z}\right| = \left|1 + u^\top \text{diag}(1 - \tanh^2(w^\top z + b))\, w\right|$$
+    $$\left|\det \frac{\partial f}{\partial z}\right| = \left|1 + u^\top \text{diag}(1 - \tanh^2(w^\top z + b))\, w\right|$$
 
-        which is a scalar — trivially cheap to compute.
+    which is a scalar — trivially cheap to compute.
 
-        One layer can only do a single directional warp. But we can **compose** layers:
+    One layer can only do a single directional warp. But we can **compose** layers:
 
-        $$f = f_K \circ f_{K-1} \circ \cdots \circ f_1$$
+    $$f = f_K \circ f_{K-1} \circ \cdots \circ f_1$$
 
-        The log-determinant of the composition is just the sum of the per-layer
-        log-determinants (chain rule). More layers = more expressive, at a
-        linear cost in computation.
+    The log-determinant of the composition is just the sum of the per-layer
+    log-determinants (chain rule). More layers = more expressive, at a
+    linear cost in computation.
 
-        Let's implement this and see what it does to a Gaussian.
-        """
-    )
+    Let's implement this and see what it does to a Gaussian.
+    """)
     return
 
 
-# ============================================================
-# CELL: Implement planar flow
-# ============================================================
 @app.cell
 def _(np):
     def init_planar(n_layers, seed=55):
@@ -331,12 +319,9 @@ def _(np):
             x = x + u * th
         return x, log_det
 
-    return init_planar, planar_forward, planar_forward_single
+    return init_planar, planar_forward
 
 
-# ============================================================
-# CELL: Interactive layer-by-layer visualization
-# ============================================================
 @app.cell
 def _(mo):
     layer_slider = mo.ui.slider(1, 20, value=5, label="Number of planar layers", step=1)
@@ -345,7 +330,7 @@ def _(mo):
 
 
 @app.cell
-def _(np, plt, init_planar, planar_forward, layer_slider, GridSpec):
+def _(GridSpec, init_planar, layer_slider, np, planar_forward, plt):
     _n_layers = layer_slider.value
     _params = init_planar(_n_layers, seed=55)
 
@@ -357,82 +342,74 @@ def _(np, plt, init_planar, planar_forward, layer_slider, GridSpec):
     _n_show = min(_n_layers, 6)
     _layer_indices = np.linspace(0, _n_layers, _n_show + 1, dtype=int)
 
-    fig = plt.figure(figsize=(12, 3.5))
-    gs = GridSpec(1, _n_show + 1, figure=fig, wspace=0.05)
+    _fig = plt.figure(figsize=(12, 3.5))
+    _gs = GridSpec(1, _n_show + 1, figure=_fig, wspace=0.05)
 
     for idx, k in enumerate(_layer_indices):
-        ax = fig.add_subplot(gs[0, idx])
+        _ax = _fig.add_subplot(_gs[0, idx])
         if k == 0:
             pts = _z
         else:
             pts, _ = planar_forward(_z, _params[:k])
 
-        ax.scatter(pts[:, 0], pts[:, 1], s=0.4, alpha=0.3, c="#70c8a0", rasterized=True)
-        ax.set_xlim(-4.5, 4.5)
-        ax.set_ylim(-4.5, 4.5)
-        ax.set_aspect("equal")
+        _ax.scatter(pts[:, 0], pts[:, 1], s=0.4, alpha=0.3, c="#70c8a0", rasterized=True)
+        _ax.set_xlim(-4.5, 4.5)
+        _ax.set_ylim(-4.5, 4.5)
+        _ax.set_aspect("equal")
         if idx == 0:
-            ax.set_title("Base z~N(0,I)", fontsize=9)
+            _ax.set_title("Base z~N(0,I)", fontsize=9)
         else:
-            ax.set_title(f"After {k} layer{'s' if k > 1 else ''}", fontsize=9)
-        ax.tick_params(labelsize=6)
+            _ax.set_title(f"After {k} layer{'s' if k > 1 else ''}", fontsize=9)
+        _ax.tick_params(labelsize=6)
         if idx > 0:
-            ax.set_yticklabels([])
+            _ax.set_yticklabels([])
 
-    fig.suptitle(f"Gaussian → {_n_layers} planar layers: watching the distribution deform",
+    _fig.suptitle(f"Gaussian → {_n_layers} planar layers: watching the distribution deform",
                  fontsize=11, y=1.02)
-    fig
+    _fig
     return
 
 
-# ============================================================
-# CELL: Section 4 - Training
-# ============================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 4. Training: minimizing KL divergence
+    mo.md(r"""
+    ## 4. Training: minimizing KL divergence
 
-        We want the flow's output distribution $q_\theta$ to match the target
-        posterior $p$. We minimize the forward KL divergence:
+    We want the flow's output distribution $q_\theta$ to match the target
+    posterior $p$. We minimize the forward KL divergence:
 
-        $$D_\text{KL}(q_\theta \| p) = \mathbb{E}_{z \sim \mathcal{N}(0,I)} \left[
-        -\log p(f_\theta(z)) - \log\left|\det \frac{\partial f_\theta}{\partial z}\right|
-        \right] + \text{const}$$
+    $$D_\text{KL}(q_\theta \| p) = \mathbb{E}_{z \sim \mathcal{N}(0,I)} \left[
+    -\log p(f_\theta(z)) - \log\left|\det \frac{\partial f_\theta}{\partial z}\right|
+    \right] + \text{const}$$
 
-        **Key insight:** every term is computable without samples from $p$.
+    **Key insight:** every term is computable without samples from $p$.
 
-        - $z \sim \mathcal{N}(0, I)$: we draw from the base Gaussian (trivial)
-        - $f_\theta(z)$: we push $z$ through the flow (forward pass)
-        - $\log p(f_\theta(z))$: we evaluate the **unnormalized** posterior at the output
-          (the normalizing constant $p(d)$ is constant w.r.t. $\theta$ and drops out)
-        - $\log|\det J|$: the flow architecture gives us this for free
+    - $z \sim \mathcal{N}(0, I)$: we draw from the base Gaussian (trivial)
+    - $f_\theta(z)$: we push $z$ through the flow (forward pass)
+    - $\log p(f_\theta(z))$: we evaluate the **unnormalized** posterior at the output
+      (the normalizing constant $p(d)$ is constant w.r.t. $\theta$ and drops out)
+    - $\log|\det J|$: the flow architecture gives us this for free
 
-        There is **no training data** in the usual ML sense. We're not fitting to
-        examples — we're optimizing the flow parameters so that its pushforward
-        distribution matches a target that we can evaluate pointwise.
+    There is **no training data** in the usual ML sense. We're not fitting to
+    examples — we're optimizing the flow parameters so that its pushforward
+    distribution matches a target that we can evaluate pointwise.
 
-        Each training step: draw a batch of $z_i$, push through $f_\theta$, evaluate
-        the loss, compute gradients, update $\theta$. An **epoch** is one such update.
+    Each training step: draw a batch of $z_i$, push through $f_\theta$, evaluate
+    the loss, compute gradients, update $\theta$. An **epoch** is one such update.
 
-        Let's train a flow on our sinusoidal posterior and watch it converge.
+    Let's train a flow on our sinusoidal posterior and watch it converge.
 
-        > **Note on the KL direction:** $D_\text{KL}(q \| p)$ is **mode-seeking** — the
-        > flow prefers to place high density where $p$ is high, even if it misses
-        > some regions of support. The reverse, $D_\text{KL}(p \| q)$, would be
-        > mode-covering but requires samples from $p$ (which is what we're trying
-        > to get). This asymmetry matters for multimodal targets.
-        """
-    )
+    > **Note on the KL direction:** $D_\text{KL}(q \| p)$ is **mode-seeking** — the
+    > flow prefers to place high density where $p$ is high, even if it misses
+    > some regions of support. The reverse, $D_\text{KL}(p \| q)$, would be
+    > mode-covering but requires samples from $p$ (which is what we're trying
+    > to get). This asymmetry matters for multimodal targets.
+    """)
     return
 
 
-# ============================================================
-# CELL: Training implementation
-# ============================================================
 @app.cell
-def _(np, A_RANGE, PHI_RANGE, log_posterior):
+def _(A_RANGE, PHI_RANGE, np):
     def flow_to_physical(x, ranges=None):
         """Map flow output to physical parameter space via sigmoid."""
         if ranges is None:
@@ -510,25 +487,37 @@ def _(np, A_RANGE, PHI_RANGE, log_posterior):
 
         return params, loss_history, snapshots
 
-    return flow_to_physical, log_sigmoid_jac, compute_loss, train_flow
+    return flow_to_physical, train_flow
 
 
-# ============================================================
-# CELL: Training controls
-# ============================================================
 @app.cell
 def _(mo):
     train_layers_slider = mo.ui.slider(1, 20, value=8, label="Planar layers", step=1)
     train_epochs_slider = mo.ui.slider(100, 2000, value=800, label="Training epochs", step=100)
     mo.hstack([train_layers_slider, train_epochs_slider], gap=2)
-    return train_layers_slider, train_epochs_slider
+    return train_epochs_slider, train_layers_slider
 
 
 @app.cell
-def _(np, plt, init_planar, planar_forward, train_flow, flow_to_physical,
-      log_posterior, A_RANGE, PHI_RANGE, TRUE_A, TRUE_PHI,
-      prob_grid, A_vals, phi_vals,
-      train_layers_slider, train_epochs_slider, GridSpec):
+def _(
+    A_RANGE,
+    A_vals,
+    GridSpec,
+    PHI_RANGE,
+    TRUE_A,
+    TRUE_PHI,
+    flow_to_physical,
+    init_planar,
+    log_posterior,
+    np,
+    phi_vals,
+    planar_forward,
+    plt,
+    prob_grid,
+    train_epochs_slider,
+    train_flow,
+    train_layers_slider,
+):
     _nL = train_layers_slider.value
     _nE = train_epochs_slider.value
 
@@ -546,83 +535,75 @@ def _(np, plt, init_planar, planar_forward, train_flow, flow_to_physical,
     _phys_samples = flow_to_physical(_x_samples)
 
     # Figure: 3 panels — loss curve, exact posterior, flow samples
-    fig = plt.figure(figsize=(12, 4))
-    gs = GridSpec(1, 3, figure=fig, wspace=0.35)
+    _fig = plt.figure(figsize=(12, 4))
+    _gs = GridSpec(1, 3, figure=_fig, wspace=0.35)
 
     # Loss curve
-    ax0 = fig.add_subplot(gs[0, 0])
-    ax0.plot(range(1, len(_loss_hist) + 1), _loss_hist, color="#70c8a0", lw=1)
-    ax0.set_xlabel("Epoch")
-    ax0.set_ylabel("Loss (KL divergence)")
-    ax0.set_title("Training loss", fontsize=11)
+    _ax0 = _fig.add_subplot(_gs[0, 0])
+    _ax0.plot(range(1, len(_loss_hist) + 1), _loss_hist, color="#70c8a0", lw=1)
+    _ax0.set_xlabel("Epoch")
+    _ax0.set_ylabel("Loss (KL divergence)")
+    _ax0.set_title("Training loss", fontsize=11)
     if len(_loss_hist) > 50:
         ymin = min(_loss_hist[50:])
         ymax = max(_loss_hist[50:])
         margin = (ymax - ymin) * 0.2
-        ax0.set_ylim(ymin - margin, ymax + margin)
+        _ax0.set_ylim(ymin - margin, ymax + margin)
 
     # Exact posterior
-    ax1 = fig.add_subplot(gs[0, 1])
-    ax1.contourf(A_vals, phi_vals, prob_grid, levels=20, cmap="viridis", alpha=0.8)
-    ax1.set_xlabel("A")
-    ax1.set_ylabel("φ")
-    ax1.set_title("Exact posterior", fontsize=11)
+    _ax1 = _fig.add_subplot(_gs[0, 1])
+    _ax1.contourf(A_vals, phi_vals, prob_grid, levels=20, cmap="viridis", alpha=0.8)
+    _ax1.set_xlabel("A")
+    _ax1.set_ylabel("φ")
+    _ax1.set_title("Exact posterior", fontsize=11)
     if TRUE_A is not None:
-        ax1.plot(TRUE_A, TRUE_PHI, "w+", markersize=10, mew=1.5)
+        _ax1.plot(TRUE_A, TRUE_PHI, "w+", markersize=10, mew=1.5)
 
     # Flow samples
-    ax2 = fig.add_subplot(gs[0, 2])
-    ax2.contourf(A_vals, phi_vals, prob_grid, levels=20, cmap="viridis", alpha=0.2)
-    mask = (
+    _ax2 = _fig.add_subplot(_gs[0, 2])
+    _ax2.contourf(A_vals, phi_vals, prob_grid, levels=20, cmap="viridis", alpha=0.2)
+    _mask = (
         (_phys_samples[:, 0] >= A_RANGE[0]) & (_phys_samples[:, 0] <= A_RANGE[1]) &
         (_phys_samples[:, 1] >= PHI_RANGE[0]) & (_phys_samples[:, 1] <= PHI_RANGE[1])
     )
-    ax2.scatter(_phys_samples[mask, 0], _phys_samples[mask, 1], s=0.5, alpha=0.3,
+    _ax2.scatter(_phys_samples[_mask, 0], _phys_samples[_mask, 1], s=0.5, alpha=0.3,
                 color="#70c8a0", rasterized=True)
-    ax2.set_xlim(A_RANGE)
-    ax2.set_ylim(PHI_RANGE)
-    ax2.set_xlabel("A")
-    ax2.set_ylabel("φ")
-    ax2.set_title(f"Flow samples ({_nL}L, {_nE} epochs)", fontsize=11)
+    _ax2.set_xlim(A_RANGE)
+    _ax2.set_ylim(PHI_RANGE)
+    _ax2.set_xlabel("A")
+    _ax2.set_ylabel("φ")
+    _ax2.set_title(f"Flow samples ({_nL}L, {_nE} epochs)", fontsize=11)
     if TRUE_A is not None:
-        ax2.plot(TRUE_A, TRUE_PHI, "w+", markersize=10, mew=1.5)
+        _ax2.plot(TRUE_A, TRUE_PHI, "w+", markersize=10, mew=1.5)
 
-    fig.suptitle("Training a planar flow on the sinusoidal posterior", fontsize=12, y=1.02)
-    fig
+    _fig.suptitle("Training a planar flow on the sinusoidal posterior", fontsize=12, y=1.02)
+    _fig
     return
 
 
-# ============================================================
-# CELL: Section 5 - MCMC vs flows
-# ============================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 5. MCMC vs normalizing flows: head to head
+    mo.md(r"""
+    ## 5. MCMC vs normalizing flows: head to head
 
-        Now let's compare the two approaches directly on the same posterior.
+    Now let's compare the two approaches directly on the same posterior.
 
-        **MCMC (Metropolis-Hastings):** cost is at *inference time*. Each step
-        proposes a move, evaluates $p$, and accepts or rejects. Samples are
-        correlated, so the effective sample size (ESS) is smaller than the chain
-        length. More samples = more time.
+    **MCMC (Metropolis-Hastings):** cost is at *inference time*. Each step
+    proposes a move, evaluates $p$, and accepts or rejects. Samples are
+    correlated, so the effective sample size (ESS) is smaller than the chain
+    length. More samples = more time.
 
-        **Normalizing flow:** cost is *upfront* during training. Once trained,
-        sampling is nearly free — draw $z \sim \mathcal{N}(0,I)$, push through $f$,
-        get an independent posterior sample. ESS $= N$ by construction.
+    **Normalizing flow:** cost is *upfront* during training. Once trained,
+    sampling is nearly free — draw $z \sim \mathcal{N}(0,I)$, push through $f$,
+    get an independent posterior sample. ESS $= N$ by construction.
 
-        Adjust the sliders to explore the tradeoff.
-        """
-    )
+    Adjust the sliders to explore the tradeoff.
+    """)
     return
 
 
-# ============================================================
-# CELL: MCMC implementation
-# ============================================================
 @app.cell
-def _(np, log_posterior):
+def _(log_posterior, np):
     def run_mcmc(n_steps, prop_scale=0.25, seed=123, start=None):
         """Run Metropolis-Hastings and return chain + diagnostics."""
         rng = np.random.default_rng(seed)
@@ -664,27 +645,42 @@ def _(np, log_posterior):
             tau_sum += rho
         return max(1, int(n / (1 + 2 * tau_sum)))
 
-    return run_mcmc, compute_ess
+    return compute_ess, run_mcmc
 
 
-# ============================================================
-# CELL: MCMC vs flow comparison controls
-# ============================================================
 @app.cell
 def _(mo):
     mcmc_steps_slider = mo.ui.slider(500, 10000, value=5000, label="MCMC steps", step=500)
     flow_layers_compare = mo.ui.slider(1, 20, value=8, label="Flow layers", step=1)
     flow_epochs_compare = mo.ui.slider(200, 2000, value=800, label="Flow epochs", step=100)
     mo.hstack([mcmc_steps_slider, flow_layers_compare, flow_epochs_compare], gap=2)
-    return mcmc_steps_slider, flow_layers_compare, flow_epochs_compare
+    return flow_epochs_compare, flow_layers_compare, mcmc_steps_slider
 
 
 @app.cell
-def _(np, plt, run_mcmc, compute_ess, init_planar, planar_forward,
-      train_flow, flow_to_physical, log_posterior,
-      A_RANGE, PHI_RANGE, TRUE_A, TRUE_PHI,
-      prob_grid, A_vals, phi_vals, GRID_N,
-      mcmc_steps_slider, flow_layers_compare, flow_epochs_compare, GridSpec):
+def _(
+    A_RANGE,
+    A_vals,
+    GRID_N,
+    GridSpec,
+    PHI_RANGE,
+    TRUE_A,
+    TRUE_PHI,
+    compute_ess,
+    flow_epochs_compare,
+    flow_layers_compare,
+    flow_to_physical,
+    init_planar,
+    log_posterior,
+    mcmc_steps_slider,
+    np,
+    phi_vals,
+    planar_forward,
+    plt,
+    prob_grid,
+    run_mcmc,
+    train_flow,
+):
 
     _n_mcmc = mcmc_steps_slider.value
     _nL = flow_layers_compare.value
@@ -722,11 +718,11 @@ def _(np, plt, run_mcmc, compute_ess, init_planar, planar_forward,
     _exact_margPhi = _exact_margPhi / (np.sum(_exact_margPhi) * _dP)
 
     # ---- Plot ----
-    fig = plt.figure(figsize=(12, 8))
-    gs = GridSpec(3, 2, figure=fig, hspace=0.4, wspace=0.3)
+    _fig = plt.figure(figsize=(12, 8))
+    _gs = GridSpec(3, 2, figure=_fig, hspace=0.4, wspace=0.3)
 
     # Top row: 2D panels
-    for col, (title, samples, color, stats_text) in enumerate([
+    for _col, (_title, _samples, _color, _stats_text) in enumerate([
         ("MCMC (Metropolis-Hastings)",
          _chain[_burnin:],
          "#e8a060",
@@ -736,89 +732,81 @@ def _(np, plt, run_mcmc, compute_ess, init_planar, planar_forward,
          "#70c8a0",
          f"samples: {len(_fphys_valid)}\nESS: {len(_fphys_valid)}\n(all independent)"),
     ]):
-        ax = fig.add_subplot(gs[0, col])
-        ax.contourf(A_vals, phi_vals, prob_grid, levels=15, cmap="viridis", alpha=0.25)
-        ax.scatter(samples[:, 0], samples[:, 1], s=0.4, alpha=0.25,
-                   color=color, rasterized=True)
-        ax.set_xlim(A_RANGE)
-        ax.set_ylim(PHI_RANGE)
-        ax.set_xlabel("A")
-        ax.set_ylabel("φ")
-        ax.set_title(title, fontsize=10, color=color)
-        ax.text(0.97, 0.97, stats_text, transform=ax.transAxes,
+        _ax = _fig.add_subplot(_gs[0, _col])
+        _ax.contourf(A_vals, phi_vals, prob_grid, levels=15, cmap="viridis", alpha=0.25)
+        _ax.scatter(_samples[:, 0], _samples[:, 1], s=0.4, alpha=0.25,
+                   color=_color, rasterized=True)
+        _ax.set_xlim(A_RANGE)
+        _ax.set_ylim(PHI_RANGE)
+        _ax.set_xlabel("A")
+        _ax.set_ylabel("φ")
+        _ax.set_title(_title, fontsize=10, color=_color)
+        _ax.text(0.97, 0.97, _stats_text, transform=_ax.transAxes,
                 fontsize=8, va="top", ha="right", color="#8098b0",
                 family="monospace")
         if TRUE_A is not None:
-            ax.plot(TRUE_A, TRUE_PHI, "w+", markersize=8, mew=1)
+            _ax.plot(TRUE_A, TRUE_PHI, "w+", markersize=8, mew=1)
 
     # Middle row: marginal A
-    for col, (samples, color, label) in enumerate([
+    for _col, (_samples, _color, _label) in enumerate([
         (_chain[_burnin:, 0], "#e8a060", "MCMC"),
         (_fphys_valid[:, 0], "#70c8a0", "Flow"),
     ]):
-        ax = fig.add_subplot(gs[1, col])
-        ax.hist(samples, bins=50, density=True, alpha=0.5, color=color, label=label)
-        ax.plot(A_vals, _exact_margA, color="#3cb8c8", lw=1.5, label="exact")
+        _ax = _fig.add_subplot(_gs[1, _col])
+        _ax.hist(_samples, bins=50, density=True, alpha=0.5, color=_color, label=_label)
+        _ax.plot(A_vals, _exact_margA, color="#3cb8c8", lw=1.5, label="exact")
         if TRUE_A is not None:
-            ax.axvline(TRUE_A, color="white", ls="--", lw=0.7, alpha=0.4)
-        ax.set_xlabel("A")
-        ax.set_ylabel("p(A | d)")
-        ax.legend(fontsize=8)
+            _ax.axvline(TRUE_A, color="white", ls="--", lw=0.7, alpha=0.4)
+        _ax.set_xlabel("A")
+        _ax.set_ylabel("p(A | d)")
+        _ax.legend(fontsize=8)
 
     # Bottom row: marginal phi
-    for col, (samples, color, label) in enumerate([
+    for _col, (_samples, _color, _label) in enumerate([
         (_chain[_burnin:, 1], "#e8a060", "MCMC"),
         (_fphys_valid[:, 1], "#70c8a0", "Flow"),
     ]):
-        ax = fig.add_subplot(gs[2, col])
-        ax.hist(samples, bins=50, density=True, alpha=0.5, color=color, label=label)
-        ax.plot(phi_vals, _exact_margPhi, color="#3cb8c8", lw=1.5, label="exact")
+        _ax = _fig.add_subplot(_gs[2, _col])
+        _ax.hist(_samples, bins=50, density=True, alpha=0.5, color=_color, label=_label)
+        _ax.plot(phi_vals, _exact_margPhi, color="#3cb8c8", lw=1.5, label="exact")
         if TRUE_PHI is not None:
-            ax.axvline(TRUE_PHI, color="white", ls="--", lw=0.7, alpha=0.4)
-        ax.set_xlabel("φ")
-        ax.set_ylabel("p(φ | d)")
-        ax.legend(fontsize=8)
+            _ax.axvline(TRUE_PHI, color="white", ls="--", lw=0.7, alpha=0.4)
+        _ax.set_xlabel("φ")
+        _ax.set_ylabel("p(φ | d)")
+        _ax.legend(fontsize=8)
 
-    fig
+    _fig
     return
 
 
-# ============================================================
-# CELL: Section 6 - Architecture comparison
-# ============================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 6. Architecture matters
+    mo.md(r"""
+    ## 6. Architecture matters
 
-        Planar flows are pedagogically useful but limited — each layer only warps
-        along one direction. Let's compare three architectures:
+    Planar flows are pedagogically useful but limited — each layer only warps
+    along one direction. Let's compare three architectures:
 
-        **Planar:** $z' = z + u \tanh(w^\top z + b)$ — 5 params/layer.
-        Cheap but weak: one directional warp per layer.
+    **Planar:** $z' = z + u \tanh(w^\top z + b)$ — 5 params/layer.
+    Cheap but weak: one directional warp per layer.
 
-        **Radial:** $z' = z + \beta\, h(\alpha, r)(z - z_0)$ — 4 params/layer.
-        Expands or contracts around a learned center. Good for changing spread,
-        bad for correlations.
+    **Radial:** $z' = z + \beta\, h(\alpha, r)(z - z_0)$ — 4 params/layer.
+    Expands or contracts around a learned center. Good for changing spread,
+    bad for correlations.
 
-        **Affine coupling:** Hold one dimension fixed, apply a learned scale and
-        shift to the other:
-        $x_b = z_b \cdot e^{s(z_a)} + t(z_a)$
-        where $s$ and $t$ are parameterized functions of $z_a$ — 8 params/layer.
-        Alternates which dimension is held fixed. This is the baby version of
-        RealNVP and the architecture used in production tools like DINGO.
+    **Affine coupling:** Hold one dimension fixed, apply a learned scale and
+    shift to the other:
+    $x_b = z_b \cdot e^{s(z_a)} + t(z_a)$
+    where $s$ and $t$ are parameterized functions of $z_a$ — 8 params/layer.
+    Alternates which dimension is held fixed. This is the baby version of
+    RealNVP and the architecture used in production tools like DINGO.
 
-        Try different distributions below to see where each architecture
-        succeeds and fails.
-        """
-    )
+    Try different distributions below to see where each architecture
+    succeeds and fails.
+    """)
     return
 
 
-# ============================================================
-# CELL: Implement radial and coupling flows
-# ============================================================
 @app.cell
 def _(np):
     def init_radial(n_layers, seed=55):
@@ -874,12 +862,9 @@ def _(np):
             log_det += log_s
         return x, log_det
 
-    return init_radial, radial_forward, init_coupling, coupling_forward
+    return coupling_forward, init_coupling, init_radial, radial_forward
 
 
-# ============================================================
-# CELL: Distribution selector and architecture comparison controls
-# ============================================================
 @app.cell
 def _(mo):
     dist_selector = mo.ui.dropdown(
@@ -896,14 +881,11 @@ def _(mo):
     arch_layers_slider = mo.ui.slider(3, 20, value=12, label="Layers per architecture", step=1)
     arch_epochs_slider = mo.ui.slider(200, 3000, value=800, label="Training epochs", step=200)
     mo.hstack([dist_selector, arch_layers_slider, arch_epochs_slider], gap=2)
-    return dist_selector, arch_layers_slider, arch_epochs_slider
+    return arch_epochs_slider, arch_layers_slider, dist_selector
 
 
-# ============================================================
-# CELL: Define test distributions
-# ============================================================
 @app.cell
-def _(np, log_posterior):
+def _(log_posterior, np):
     test_distributions = {
         "sinusoid": {
             "name": "Sinusoid",
@@ -961,17 +943,24 @@ def _(np, log_posterior):
     return (test_distributions,)
 
 
-# ============================================================
-# CELL: Architecture comparison plot
-# ============================================================
 @app.cell
-def _(np, plt, GridSpec,
-      init_planar, planar_forward,
-      init_radial, radial_forward,
-      init_coupling, coupling_forward,
-      train_flow, flow_to_physical,
-      test_distributions,
-      dist_selector, arch_layers_slider, arch_epochs_slider):
+def _(
+    GridSpec,
+    arch_epochs_slider,
+    arch_layers_slider,
+    coupling_forward,
+    dist_selector,
+    flow_to_physical,
+    init_coupling,
+    init_planar,
+    init_radial,
+    np,
+    planar_forward,
+    plt,
+    radial_forward,
+    test_distributions,
+    train_flow,
+):
 
     _dist_key = dist_selector.value
     _dist = test_distributions[_dist_key]
@@ -995,19 +984,19 @@ def _(np, plt, GridSpec,
     _em0 = np.sum(_pgrid, axis=0); _em0 /= np.sum(_em0) * _d0
     _em1 = np.sum(_pgrid, axis=1); _em1 /= np.sum(_em1) * _d1
 
-    architectures = [
+    _architectures = [
         ("Planar", init_planar, planar_forward, "#e8a060", 5),
         ("Radial", init_radial, radial_forward, "#c080e0", 4),
         ("Coupling", init_coupling, coupling_forward, "#70c8a0", 8),
     ]
 
-    fig = plt.figure(figsize=(13, 9))
-    gs = GridSpec(3, 3, figure=fig, hspace=0.35, wspace=0.3)
+    _fig = plt.figure(figsize=(13, 9))
+    _gs = GridSpec(3, 3, figure=_fig, hspace=0.35, wspace=0.3)
 
-    for col, (arch_name, init_fn, fwd_fn, color, ppl) in enumerate(architectures):
+    for _col, (_arch_name, _init_fn, _fwd_fn, _color, _ppl) in enumerate(_architectures):
         # Train
         _params, _loss, _ = train_flow(
-            init_fn, fwd_fn, _log_p,
+            _init_fn, _fwd_fn, _log_p,
             n_layers=_nL, n_epochs=_nE,
             batch_size=100, lr=0.02, lr_decay=0.0008,
             ranges=_ranges,
@@ -1016,7 +1005,7 @@ def _(np, plt, GridSpec,
         # Sample
         _rng = np.random.default_rng(42)
         _z = _rng.normal(size=(3000, 2))
-        _fx, _ = fwd_fn(_z, _params)
+        _fx, _ = _fwd_fn(_z, _params)
         _fphys = flow_to_physical(_fx, _ranges)
         _mask = (
             (_fphys[:, 0] >= _ranges[0][0]) & (_fphys[:, 0] <= _ranges[0][1]) &
@@ -1025,101 +1014,95 @@ def _(np, plt, GridSpec,
         _valid = _fphys[_mask]
 
         # 2D
-        ax = fig.add_subplot(gs[0, col])
-        ax.contourf(_v0, _v1, _pgrid, levels=15, cmap="viridis", alpha=0.25)
+        _ax = _fig.add_subplot(_gs[0, _col])
+        _ax.contourf(_v0, _v1, _pgrid, levels=15, cmap="viridis", alpha=0.25)
         if len(_valid) > 0:
-            ax.scatter(_valid[:, 0], _valid[:, 1], s=0.5, alpha=0.3, color=color, rasterized=True)
-        ax.set_xlim(_ranges[0])
-        ax.set_ylim(_ranges[1])
-        ax.set_xlabel(_dist["labels"][0])
-        ax.set_ylabel(_dist["labels"][1])
-        ax.set_title(f"{arch_name} ({_nL}L · {_nL * ppl}p)", fontsize=10, color=color)
+            _ax.scatter(_valid[:, 0], _valid[:, 1], s=0.5, alpha=0.3, color=_color, rasterized=True)
+        _ax.set_xlim(_ranges[0])
+        _ax.set_ylim(_ranges[1])
+        _ax.set_xlabel(_dist["labels"][0])
+        _ax.set_ylabel(_dist["labels"][1])
+        _ax.set_title(f"{_arch_name} ({_nL}L · {_nL * _ppl}p)", fontsize=10, color=_color)
         if _dist["true_vals"] is not None:
-            ax.plot(_dist["true_vals"][0], _dist["true_vals"][1], "w+", markersize=8, mew=1)
+            _ax.plot(_dist["true_vals"][0], _dist["true_vals"][1], "w+", markersize=8, mew=1)
 
         # Marginal 0
-        ax = fig.add_subplot(gs[1, col])
+        _ax = _fig.add_subplot(_gs[1, _col])
         if len(_valid) > 0:
-            ax.hist(_valid[:, 0], bins=45, density=True, alpha=0.5, color=color)
-        ax.plot(_v0, _em0, color="#3cb8c8", lw=1.3)
-        ax.set_xlabel(_dist["labels"][0])
-        ax.set_ylabel(f"p({_dist['labels'][0]}|d)")
+            _ax.hist(_valid[:, 0], bins=45, density=True, alpha=0.5, color=_color)
+        _ax.plot(_v0, _em0, color="#3cb8c8", lw=1.3)
+        _ax.set_xlabel(_dist["labels"][0])
+        _ax.set_ylabel(f"p({_dist['labels'][0]}|d)")
         if _dist["true_vals"] is not None:
-            ax.axvline(_dist["true_vals"][0], color="white", ls="--", lw=0.7, alpha=0.3)
+            _ax.axvline(_dist["true_vals"][0], color="white", ls="--", lw=0.7, alpha=0.3)
 
         # Marginal 1
-        ax = fig.add_subplot(gs[2, col])
+        _ax = _fig.add_subplot(_gs[2, _col])
         if len(_valid) > 0:
-            ax.hist(_valid[:, 1], bins=45, density=True, alpha=0.5, color=color)
-        ax.plot(_v1, _em1, color="#3cb8c8", lw=1.3)
-        ax.set_xlabel(_dist["labels"][1])
-        ax.set_ylabel(f"p({_dist['labels'][1]}|d)")
+            _ax.hist(_valid[:, 1], bins=45, density=True, alpha=0.5, color=_color)
+        _ax.plot(_v1, _em1, color="#3cb8c8", lw=1.3)
+        _ax.set_xlabel(_dist["labels"][1])
+        _ax.set_ylabel(f"p({_dist['labels'][1]}|d)")
         if _dist["true_vals"] is not None:
-            ax.axvline(_dist["true_vals"][1], color="white", ls="--", lw=0.7, alpha=0.3)
+            _ax.axvline(_dist["true_vals"][1], color="white", ls="--", lw=0.7, alpha=0.3)
 
-    fig.suptitle(f"{_dist['name']} — {_nL} layers, {_nE} epochs",
+    _fig.suptitle(f"{_dist['name']} — {_nL} layers, {_nE} epochs",
                  fontsize=12, y=1.01)
-    fig
+    _fig
     return
 
 
-# ============================================================
-# CELL: Closing remarks
-# ============================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 7. From toy models to gravitational-wave inference
+    mo.md(r"""
+    ## 7. From toy models to gravitational-wave inference
 
-        Everything we've built here uses **2D** posteriors with **5–8 parameters
-        per layer** and **finite-difference gradients**. Real applications differ
-        in scale but not in principle:
+    Everything we've built here uses **2D** posteriors with **5–8 parameters
+    per layer** and **finite-difference gradients**. Real applications differ
+    in scale but not in principle:
 
-        - **DINGO** (Dax et al. 2021) uses normalizing flows for compact binary
-          coalescence parameter estimation — 15+ dimensional posteriors with
-          coupling layers whose conditioners are deep ResNets (thousands of
-          parameters per layer), trained with automatic differentiation on GPUs.
+    - **DINGO** (Dax et al. 2021) uses normalizing flows for compact binary
+      coalescence parameter estimation — 15+ dimensional posteriors with
+      coupling layers whose conditioners are deep ResNets (thousands of
+      parameters per layer), trained with automatic differentiation on GPUs.
 
-        - **nessai** (Williams et al. 2021) combines flows with nested sampling,
-          using the flow as a proposal distribution to accelerate evidence
-          computation.
+    - **nessai** (Williams et al. 2021) combines flows with nested sampling,
+      using the flow as a proposal distribution to accelerate evidence
+      computation.
 
-        - The key architectural upgrade is in the **conditioner**: our coupling
-          layers use $s(z_a) = a_1 \tanh(a_2 z_a + a_3) + a_4$ (4 parameters).
-          Production flows use $s(z_a) = \text{ResNet}(z_a)$ with tens of thousands
-          of parameters, or neural spline flows where the transformation is a
-          monotonic rational-quadratic spline.
+    - The key architectural upgrade is in the **conditioner**: our coupling
+      layers use $s(z_a) = a_1 \tanh(a_2 z_a + a_3) + a_4$ (4 parameters).
+      Production flows use $s(z_a) = \text{ResNet}(z_a)$ with tens of thousands
+      of parameters, or neural spline flows where the transformation is a
+      monotonic rational-quadratic spline.
 
-        ## 8. Open questions
+    ## 8. Open questions
 
-        - **Mode coverage:** $D_\text{KL}(q \| p)$ training is mode-seeking.
-          How do you verify the flow hasn't missed a mode? (p-p plots, comparison
-          with short MCMC runs, training with alternative objectives)
+    - **Mode coverage:** $D_\text{KL}(q \| p)$ training is mode-seeking.
+      How do you verify the flow hasn't missed a mode? (p-p plots, comparison
+      with short MCMC runs, training with alternative objectives)
 
-        - **Combining flows + MCMC:** Use the flow as a proposal distribution for
-          MCMC, getting the best of both worlds — the flow provides good proposals,
-          MCMC guarantees asymptotic exactness.
+    - **Combining flows + MCMC:** Use the flow as a proposal distribution for
+      MCMC, getting the best of both worlds — the flow provides good proposals,
+      MCMC guarantees asymptotic exactness.
 
-        - **Continuous normalizing flows:** Replace discrete layers with a neural
-          ODE $\frac{dx}{dt} = v_\theta(x, t)$, where the Jacobian is computed
-          via the instantaneous change of variables $\frac{\partial \log p}{\partial t}
-          = -\nabla \cdot v$.
+    - **Continuous normalizing flows:** Replace discrete layers with a neural
+      ODE $\frac{dx}{dt} = v_\theta(x, t)$, where the Jacobian is computed
+      via the instantaneous change of variables $\frac{\partial \log p}{\partial t}
+      = -\nabla \cdot v$.
 
-        - **Simulation-based inference:** When the likelihood is intractable
-          (e.g., you can simulate but can't write down $p(d|\theta)$), flows
-          can be trained on simulated $(\theta, d)$ pairs to learn the conditional
-          posterior amortized over many datasets.
+    - **Simulation-based inference:** When the likelihood is intractable
+      (e.g., you can simulate but can't write down $p(d|\theta)$), flows
+      can be trained on simulated $(\theta, d)$ pairs to learn the conditional
+      posterior amortized over many datasets.
 
-        ---
+    ---
 
-        *Tutorial by Chiara Mingarelli (Yale / Flatiron CCA). Built with
-        [marimo](https://marimo.io).*
-        """
-    )
+    *Tutorial by Chiara Mingarelli (Yale / Flatiron CCA). Built with
+    [marimo](https://marimo.io).*
+    """)
     return
 
 
-# ============================================================
 if __name__ == "__main__":
     app.run()
