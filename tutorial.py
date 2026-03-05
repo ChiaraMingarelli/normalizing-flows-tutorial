@@ -226,25 +226,41 @@ def _(mo):
 
     ## 2. The core idea: change of variables
 
-    Suppose we have an invertible, differentiable map $f: \mathbb{R}^d \to \mathbb{R}^d$.
-    If $z \sim q_0(z)$ (a simple base distribution, say a Gaussian), then $x = f(z)$
-    has density:
+    The idea starts from something you already know: the **change-of-variables
+    formula** from multivariate calculus. If you have a random variable $z$
+    with known density $q_0(z)$ and you apply a smooth, invertible
+    transformation to get $x$, you can write down the density of $x$
+    exactly — you just account for how the transformation stretches or
+    compresses volume.
 
-    $$q(x) = q_0\!\left(f^{-1}(x)\right) \left|\det \frac{\partial f^{-1}}{\partial x}\right|
-    = q_0(z) \left|\det \frac{\partial f}{\partial z}\right|^{-1}$$
+    **Notation.** We write $q_0$ for the **base density** (a standard
+    Gaussian $\mathcal{N}(0,I)$). We write $f_\theta$ for a parametric,
+    invertible map that we will learn. And $q_\theta$ denotes the
+    **pushforward density** — the distribution of $x = f_\theta(z)$ when
+    $z \sim q_0$. Note that $q_0$ and $q_\theta$ are *different densities*
+    in different spaces; they are related by the transformation $f_\theta$,
+    not by a change of subscript.
 
-    This is just the change-of-variables formula from calculus, applied to
-    probability densities. The absolute value of the Jacobian determinant
-    accounts for how $f$ stretches or compresses volume.
+    The change-of-variables formula then gives:
 
-    **The plan:**
+    $$q_\theta(x) = q_0\!\left(f_\theta^{-1}(x)\right) \left|\det \frac{\partial f_\theta^{-1}}{\partial x}\right|
+    = q_0(z) \left|\det \frac{\partial f_\theta}{\partial z}\right|^{-1}$$
+
+    The Jacobian determinant captures the local volume change. If you've
+    seen Jacobians in coordinate transformations in GR or in changing
+    integration variables for a partition function, this is the same idea.
+
+    **The plan:** if we can find $\theta$ such that $q_\theta \approx p(\cdot \mid d)$:
 
     1. Choose a parametric family of invertible maps $f_\theta$
-    2. Adjust $\theta$ until the pushforward $q_\theta(x)$ matches the target posterior $p(x)$
+    2. Adjust $\theta$ until $q_\theta(x) \approx p(x \mid d)$
     3. Sample: draw $z \sim \mathcal{N}(0, I)$, compute $x = f_\theta(z)$, done
 
     Every sample is **independent** (no chain, no burn-in, no thinning), and
     the cost of generating each sample is just one forward pass through $f_\theta$.
+    This is the essence of a **normalizing flow**. The name "normalizing" refers
+    to the fact that the change-of-variables formula keeps the density properly
+    normalized; "flow" evokes the smooth deformation of the base into the target.
 
     ---
 
@@ -264,7 +280,15 @@ def _(mo):
 
     which is a scalar — trivially cheap to compute.
 
-    One layer can only do a single directional warp. But we can **compose** layers:
+    One layer can only do a single directional warp — the bump is always
+    along $u$, so a single planar layer can't simultaneously stretch in one
+    direction and compress in another. This is a real limitation: you need
+    *many* layers even for modest 2D targets, and the learned directions
+    $u_k$ of different layers need not be orthogonal or evenly spread.
+    We'll see in Section 6 that more flexible layer designs largely remove
+    this bottleneck.
+
+    To build up expressiveness, we **compose** layers:
 
     $$f = f_K \circ f_{K-1} \circ \cdots \circ f_1$$
 
@@ -389,7 +413,11 @@ def _(mo):
     - $f_\theta(z)$: we push $z$ through the flow (forward pass)
     - $\log p(f_\theta(z))$: we evaluate the **unnormalized** posterior at the output
       (the normalizing constant $p(d)$ is constant w.r.t. $\theta$ and drops out)
-    - $\log|\det J|$: the flow architecture gives us this for free
+    - $\log|\det J|$: the flow architecture gives us this cheaply *for the
+      layer types we use here* (rank-one or triangular Jacobians). This is
+      **not free in general** — a naïve $d \times d$ determinant costs $O(d^3)$,
+      and much of the art in designing flow architectures is choosing
+      transformations whose Jacobian structure makes the determinant cheap
 
     There is **no training data** in the usual ML sense. We're not fitting to
     examples — we're optimizing the flow parameters so that its pushforward
@@ -400,11 +428,18 @@ def _(mo):
 
     Let's train a flow on our sinusoidal posterior and watch it converge.
 
-    > **Note on the KL direction:** $D_\text{KL}(q \| p)$ is **mode-seeking** — the
-    > flow prefers to place high density where $p$ is high, even if it misses
-    > some regions of support. The reverse, $D_\text{KL}(p \| q)$, would be
-    > mode-covering but requires samples from $p$ (which is what we're trying
-    > to get). This asymmetry matters for multimodal targets.
+    > **Note on the KL direction (and how it can bite you).** $D_\text{KL}(q \| p)$
+    > is **mode-seeking**: it penalizes the flow for placing mass where $p$ is
+    > small, but imposes *no direct penalty* for regions where $p$ has mass but
+    > $q$ does not. If the target has multiple modes, the flow may latch onto one
+    > and ignore the rest — and nothing in the training loss tells you a mode was
+    > missed. You only discover the problem by independent validation (a short
+    > MCMC run, a p–p plot, or physical intuition about expected degeneracies).
+    >
+    > The reverse, $D_\text{KL}(p \| q)$, would be mode-covering but requires
+    > samples from $p$ (which is what we're trying to get). In practice, one can
+    > mitigate mode-seeking by using the flow as a proposal for MCMC (Section 8),
+    > or by training with alternative divergences.
     """)
     return
 
@@ -605,6 +640,12 @@ def _(mo):
     **Normalizing flow:** cost is *upfront* during training. Once trained,
     sampling is nearly free — draw $z \sim \mathcal{N}(0,I)$, push through $f$,
     get an independent posterior sample. ESS $= N$ by construction.
+
+    However, the training cost depends strongly on the architecture: a toy
+    planar flow trains in seconds, while a production neural spline flow can
+    require hours of GPU time. For a one-off inference on a single event, the
+    upfront cost may exceed MCMC; the payoff comes with amortization or when
+    many independent samples are needed quickly.
 
     Adjust the sliders to explore the tradeoff.
     """)
@@ -1088,6 +1129,27 @@ def _(mo):
       coalescence parameter estimation — 15+ dimensional posteriors with
       coupling layers whose conditioners are deep ResNets (thousands of
       parameters per layer), trained with automatic differentiation on GPUs.
+      Note: DINGO uses a **discrete** flow (a finite composition of coupling
+      layers), not a continuous normalizing flow. The use of AD for computing
+      gradients during *training* doesn't make the flow itself continuous — AD
+      replaces our finite-difference hack with exact backprop, but $f_\theta$
+      is still a fixed sequence of discrete layers.
+
+    - **Overlapping signals** (Langendorff et al. 2023): 3G detectors will
+      have overlapping CBC signals. Joint PE is preferable to hierarchical
+      analysis but expensive with traditional samplers. They demonstrate
+      *conditional continuous normalizing flows* for this: the flow is
+      *conditional* ($f_\theta(z; d)$ depends on the data, so one network
+      handles many datasets) and *continuous* (neural ODE, not discrete
+      layers — small memory footprint). Results: slightly widened posteriors,
+      but injected values always recovered, and inference is orders of
+      magnitude faster after training.
+
+    - **Population inference** (Cheung et al. 2022): flows as likelihood
+      emulators for GW population inference. Flows recover population
+      posteriors using up to 300 mock injections where Gaussian process
+      regression fails in high dimensions. Caveat: can underestimate
+      uncertainty on real data.
 
     - **nessai** (Williams et al. 2021) combines flows with nested sampling,
       using the flow as a proposal distribution to accelerate evidence
@@ -1106,23 +1168,38 @@ def _(mo):
       with short MCMC runs, training with alternative objectives)
 
     - **Combining flows + MCMC:** Use the flow as a proposal distribution for
-      MCMC, getting the best of both worlds — the flow provides good proposals,
-      MCMC guarantees asymptotic exactness.
+      Metropolis-Hastings: draw $z \sim \mathcal{N}(0,I)$, propose
+      $x' = f_\theta(z)$, accept/reject via the usual ratio using the *true*
+      posterior. Because the flow already approximates $p$, acceptance rates
+      are high ($> 80\%$) and the chain mixes rapidly. This also provides a
+      self-consistency check: if the chain discovers modes the flow missed,
+      the acceptance rate drops, flagging the problem. This is arguably the
+      most practical near-term use of flows in GW inference.
 
-    - **Continuous normalizing flows:** Replace discrete layers with a neural
-      ODE $\frac{dx}{dt} = v_\theta(x, t)$, where the Jacobian is computed
-      via the instantaneous change of variables $\frac{\partial \log p}{\partial t}
-      = -\nabla \cdot v$.
+    - **Architecture taxonomy:** Beyond what we cover here, the main families
+      are: *elementwise* (diagonal Jacobian, no correlations), *linear*
+      (restrict $A$ to triangular/orthogonal for tractability), *autoregressive*
+      (condition each dimension on all preceding — more expressive per layer
+      than coupling, but sequential sampling), *residual* ($g(x) = x + F(x)$
+      with Lipschitz constraint), and *continuous* (neural ODE
+      $\frac{dx}{dt} = v_\theta(x, t)$, trace replaces determinant via
+      Hutchinson estimator). Each trades off expressiveness, inversion cost,
+      and Jacobian cost differently.
 
     - **Simulation-based inference:** When the likelihood is intractable
       (e.g., you can simulate but can't write down $p(d|\theta)$), flows
       can be trained on simulated $(\theta, d)$ pairs to learn the conditional
       posterior amortized over many datasets.
 
+    - **Further open problems:** choice of base distribution (not always
+      Gaussian); alternative loss functions beyond KL; flows on non-Euclidean
+      manifolds (e.g., sky location on $S^2$); flows for discrete
+      distributions.
+
     ---
 
-    *Tutorial by Chiara Mingarelli (Yale / Flatiron CCA). Built with
-    [marimo](https://marimo.io).*
+    *Tutorial by Chiara Mingarelli, Abigail Moran, and Nicole Khusid
+    (Yale / Flatiron CCA). Built with [marimo](https://marimo.io).*
     """)
     return
 

@@ -14,6 +14,9 @@
 \usepackage{fancyhdr}
 \usepackage[section]{placeins}   % prevent floats from drifting past section boundaries
 \usepackage{float}               % provides [H] placement specifier
+\usepackage{pifont}              % for checkmarks and crosses
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
 % biblatex removed: using \thebibliography for portability (no .bib file needed)
 
 % ---- Colors ----
@@ -51,7 +54,13 @@ An Interactive Tutorial}
 \author{Chiara Mingarelli\\
 \small Department of Physics, Yale University\\
 \small Center for Computational Astrophysics, Flatiron Institute\\
-\small \texttt{chiara.mingarelli@yale.edu}}
+\small \texttt{chiara.mingarelli@yale.edu}
+\and
+Abigail Moran\\
+\small Department of Physics, Yale University
+\and
+Nicole Khusid\\
+\small Department of Physics, Yale University}
 \date{2026}
 
 % ---- Bibliography (inline for portability) ----
@@ -157,6 +166,52 @@ RealNVP &
 \end{table}
 
 \newpage
+
+\noindent\textbf{Glossary (continued).}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}p{0.22\textwidth}p{0.74\textwidth}@{}}
+\toprule
+\textbf{Term} & \textbf{Definition} \\
+\midrule
+Autoregressive flow &
+  A flow where each output dimension is conditioned on all preceding
+  dimensions, generalizing multiplication by a triangular matrix.
+  More expressive per layer than coupling flows, but sampling requires
+  a sequential pass (cannot be parallelized). \\[4pt]
+Continuous normalizing flow &
+  A flow defined by a neural ODE $dx/dt = v_\theta(x,t)$ rather than
+  a discrete sequence of layers.
+  The change-of-variables formula becomes instantaneous:
+  $\partial_t \log q = -\nabla \cdot v$.
+  Avoids choosing a fixed number of layers, at the cost of solving an
+  ODE at train and sample time. \\[4pt]
+Hypernetwork &
+  A neural network that generates the weights (or modulates the
+  behaviour) of another network.
+  In conditional continuous flows, the hypernetwork takes the observed
+  data $d$ as input and produces parameters for the velocity field
+  $v_\theta(x,t; d)$, enabling a single trained model to handle
+  different datasets. \\[4pt]
+Diffeomorphism &
+  An invertible, smooth map whose inverse is also smooth.
+  Every normalizing flow layer is a diffeomorphism; this ensures that
+  densities transform correctly under the change-of-variables formula.
+  A consequence is that flows preserve the topology of the base
+  distribution (e.g., they cannot ``punch a hole'' to create a ring). \\[4pt]
+Likelihood emulator &
+  A machine-learning model trained to approximate the likelihood
+  function $p(d|\theta)$ cheaply, replacing expensive forward
+  simulations during inference.
+  In GW population studies, normalizing flows have been used as
+  likelihood emulators. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\newpage
 \tableofcontents
 \newpage
 
@@ -223,26 +278,51 @@ want?
 \label{sec:change-of-variables}
 %======================================================================
 
-Suppose we have an invertible, differentiable map
-$f : \mathbb{R}^d \to \mathbb{R}^d$.
-If $z \sim q_0(z)$ (a simple base distribution, say a standard
-Gaussian), then $x = f(z)$ has density
+The idea starts from something you already know: the
+\emph{change-of-variables formula} from multivariate calculus.
+Recall that if you have a random variable $z$ with known density
+$q_0(z)$ and you apply a smooth, invertible transformation to get a new
+variable $x$, you can write down the density of $x$ exactly---you just
+need to account for how the transformation stretches or compresses
+volume.
+
+Let us set up the notation carefully, since several densities will be
+in play.
+We write $q_0$ for the \textbf{base density}---the simple distribution
+we start from (a standard Gaussian $\mathcal{N}(0,I)$ in everything
+that follows).
+We write $f_\theta$ for a parametric, invertible, differentiable map
+that we will learn; the subscript $\theta$ denotes the trainable
+parameters.
+Finally, $q_\theta$ denotes the \textbf{pushforward density}---the
+distribution of $x = f_\theta(z)$ when $z \sim q_0$.
+Note that $q_0$ and $q_\theta$ are \emph{different densities}: $q_0$
+lives in the ``base'' space and $q_\theta$ lives in the ``target''
+space; they are related by the transformation $f_\theta$, not by
+a change of subscript.
+
+With this notation, the change-of-variables formula gives us:
 \begin{equation}
-  q(x) = q_0\!\bigl(f^{-1}(x)\bigr)
-  \left|\det \frac{\partial f^{-1}}{\partial x}\right|
-  = q_0(z) \left|\det \frac{\partial f}{\partial z}\right|^{-1}.
+  q_\theta(x) = q_0\!\bigl(f_\theta^{-1}(x)\bigr)
+  \left|\det \frac{\partial f_\theta^{-1}}{\partial x}\right|
+  = q_0(z) \left|\det \frac{\partial f_\theta}{\partial z}\right|^{-1}.
   \label{eq:change-of-variables}
 \end{equation}
-This is the change-of-variables formula from multivariate calculus,
-applied to probability densities.
-The absolute value of the Jacobian determinant accounts for how $f$
-locally stretches or compresses volume.
+The Jacobian matrix $\partial f_\theta / \partial z$ describes how
+$f_\theta$ locally stretches each direction;
+its determinant gives the overall volume change, and the absolute value
+ensures the density stays non-negative.
+If you have seen Jacobians in the context of coordinate transformations
+in GR or in changing integration variables for a partition function,
+this is exactly the same idea.
 
-The plan:
+Now for the key insight.
+Suppose we can find $\theta$ such that the pushforward $q_\theta$
+matches the posterior $p$ we want to sample from.
+Then sampling becomes trivial:
 \begin{enumerate}[label=\arabic*.]
   \item Choose a parametric family of invertible maps $f_\theta$.
-  \item Adjust $\theta$ until the pushforward distribution
-        $q_\theta(x)$ matches the target posterior $p(x)$.
+  \item Adjust $\theta$ until $q_\theta(x) \approx p(x \mid d)$.
   \item Sample: draw $z \sim \mathcal{N}(0, I)$,
         compute $x = f_\theta(z)$, done.
 \end{enumerate}
@@ -250,6 +330,10 @@ Every sample is \emph{independent} (no chain, no burn-in, no thinning),
 and the cost of generating each sample is just one forward pass through
 $f_\theta$.
 This is the essence of a \textbf{normalizing flow}.
+The name ``normalizing'' refers to the fact that
+Eq.~\eqref{eq:change-of-variables} keeps the density properly
+normalized at every step; ``flow'' evokes the smooth, continuous
+deformation of the base distribution into the target.
 
 
 %======================================================================
@@ -276,8 +360,17 @@ The Jacobian determinant has a closed-form expression:
 \end{equation}
 which is a scalar---trivially cheap to compute.
 
-One layer can only perform a single directional warp.
-But we can \textbf{compose} layers:
+One layer can only perform a single directional warp---the bump is
+always along $u$, so a single planar layer cannot, for instance,
+simultaneously stretch in one direction and compress in another.
+This is a real limitation: you need \emph{many} layers even
+for modest 2D targets, and the directions $u_k$ of different layers
+need not be orthogonal or evenly spread (they are learned, not
+prescribed).
+We will see in Section~\ref{sec:architectures} that more flexible
+layer designs largely remove this bottleneck.
+
+To build up expressiveness, we \textbf{compose} layers:
 \begin{equation}
   f = f_K \circ f_{K-1} \circ \cdots \circ f_1.
   \label{eq:composition}
@@ -332,7 +425,16 @@ Every term is computable \emph{without samples from $p$}:
         at the output.
         The normalizing constant $p(d)$ is constant w.r.t.\ $\theta$ and
         drops out of the gradient.
-  \item $\log|\det J|$: the flow architecture gives us this for free.
+  \item $\log|\det J|$: the flow architecture gives us this cheaply
+        \emph{for the layer types we use here}.
+        Planar flows have a rank-one update whose determinant is a
+        scalar (Eq.~\ref{eq:planar-det}); affine coupling layers
+        have a triangular Jacobian whose determinant is a product of
+        diagonal entries (Section~\ref{sec:architectures}).
+        This is \textbf{not free in general}---a na\"ive $d \times d$
+        determinant costs $O(d^3)$, and much of the art in designing
+        flow architectures is choosing transformations whose Jacobian
+        structure makes the determinant cheap (triangular, rank-one, etc.).
 \end{itemize}
 There is \textbf{no training data} in the usual ML sense.
 We are not fitting to examples; we are optimizing the flow parameters
@@ -347,13 +449,34 @@ $\theta_i = a_i + (b_i - a_i)\,\sigma(x_i)$.
 This introduces an additional Jacobian factor $\log|J_\sigma|$ in
 the loss.
 
-\paragraph{Note on the KL direction.}
-$D_\mathrm{KL}(q \| p)$ is \emph{mode-seeking}: the flow prefers to
-place high density where $p$ is high, even if it misses some regions
-of support.
-The reverse, $D_\mathrm{KL}(p \| q)$, would be mode-covering but
-requires samples from $p$---which is what we are trying to obtain.
-This asymmetry matters for multimodal targets (Section~\ref{sec:architectures}).
+\paragraph{Note on the KL direction (and how it can bite you).}
+$D_\mathrm{KL}(q \| p)$ is \emph{mode-seeking}: it penalizes the flow
+heavily for placing mass where $p$ is small (because $\log(q/p)$ blows
+up), but imposes \emph{no direct penalty} for regions where $p$ has
+mass but $q$ does not.
+The practical consequence is that if the target has multiple modes, the
+flow may latch onto one mode and ignore the others entirely.
+For a bimodal posterior, this means you could obtain a perfectly
+converged-looking loss curve and a set of samples that appear
+self-consistent---yet miss half the posterior.
+There is nothing in the training signal that tells you a mode was
+missed; you only discover the problem by independent validation
+(e.g., a short MCMC run, a p--p plot, or physical intuition about
+the expected degeneracies).
+
+The reverse direction, $D_\mathrm{KL}(p \| q)$, would be
+\emph{mode-covering}: it forces $q$ to have support everywhere $p$ does.
+But it requires samples from $p$---which is what we are trying to
+obtain in the first place.
+In practice, one can partially mitigate the mode-seeking problem by
+using the flow as a proposal for MCMC (Section~\ref{sec:open}), or
+by training with alternative divergences ($\alpha$-divergences,
+the sliced Wasserstein distance) that interpolate between the two
+extremes.
+This asymmetry matters most for multimodal targets
+(Section~\ref{sec:architectures}), and is one of the main open
+challenges in applying normalizing flows to problems with well-separated
+modes---such as the sky-localization degeneracy in GW inference.
 
 Figure~\ref{fig:training} shows this training procedure applied to our
 sinusoidal posterior: the KL loss (Eq.~\ref{eq:kl-loss}) decreases
@@ -402,6 +525,14 @@ Cost is upfront during training.
 Once trained, sampling is nearly free: draw $z \sim \mathcal{N}(0, I)$,
 push through $f_\theta$, and obtain an independent posterior sample.
 $\mathrm{ESS} = N$ by construction.
+However, the training cost itself depends strongly on the architecture:
+a simple planar flow with 5 parameters per layer trains in seconds,
+while a production neural spline flow with deep ResNet conditioners can
+require hours of GPU time.
+For a one-off inference on a single event, this upfront cost may exceed
+the cost of running MCMC; the payoff comes when the trained flow is
+reused (amortized inference) or when many independent samples are
+needed quickly.
 
 Table~\ref{tab:comparison} summarizes the tradeoffs, and
 Figure~\ref{fig:mcmc-vs-flow} compares the two methods side by side
@@ -577,24 +708,61 @@ representative comparison):
   \label{fig:architectures}
 \end{figure}
 
+Table~\ref{tab:arch-summary} summarizes which architecture performs
+best on each target.
+The companion notebook lets you verify these observations
+interactively by selecting different distributions from the dropdown
+and comparing the results.
+
+\begin{table}[H]
+  \centering
+  \caption{Architecture performance across target distributions.
+    \cmark\ = captures the target well;
+    $\sim$ = partial success;
+    \xmark\ = fails qualitatively.}
+  \label{tab:arch-summary}
+  \begin{tabular}{lccc}
+    \toprule
+    \textbf{Target} & \textbf{Planar} & \textbf{Radial} & \textbf{Coupling} \\
+    \midrule
+    Sinusoid & $\sim$ & $\sim$ & \cmark \\
+    Banana   & $\sim$ & \xmark & \cmark \\
+    Triple mode & \xmark & \xmark & $\sim$ \\
+    Ring     & \xmark & \xmark & $\sim$ \\
+    Funnel   & \xmark & \xmark & $\sim$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 Key observations:
 \begin{itemize}
-  \item \textbf{Banana}: Coupling flows handle the curved ridge best,
-        since the conditional scale parameter can model the
-        $x$-dependent width. Radial flows struggle because they
-        cannot introduce correlations.
-  \item \textbf{Triple mode}: All architectures struggle with mode
-        coverage, due to the mode-seeking nature of
-        $D_\mathrm{KL}(q \| p)$. Coupling flows fare best because
-        their per-layer expressiveness is highest.
+  \item \textbf{Sinusoid}: All three produce reasonable samples;
+        the coupling flow captures the curved ridge most faithfully
+        because its conditional scale parameter can model the
+        $A$-dependent width of the ridge in $\varphi$.
+  \item \textbf{Banana}: The coupling flow wins decisively---its
+        scale function $s(z_a)$ directly models the $x$-dependent
+        variance $\mathrm{Var}(y \mid x) \propto 1$.
+        Radial flows cannot introduce correlations between dimensions
+        at all and collapse to a blob.
+  \item \textbf{Triple mode}: All architectures struggle because of
+        the mode-seeking KL (Section~\ref{sec:training}): the flow
+        typically locks onto one or two modes and ignores the rest.
+        Coupling flows fare best because their per-layer expressiveness
+        is highest, but even they rarely cover all three modes.
+        This is the mode-seeking problem in action.
   \item \textbf{Ring}: None of the architectures can fully evacuate
         the interior, since all three are smooth diffeomorphisms
-        and thus preserve the topology of the base distribution.
-        Planar flows produce spirals; coupling flows approximate
-        the ring more closely.
+        and therefore preserve the topology of the (simply connected)
+        base distribution.
+        Planar flows produce spirals; coupling flows approximate the
+        ring more closely by squeezing the interior mass into a thin
+        annulus.
   \item \textbf{Funnel}: The exponential variation in width is hard
-        for all methods. Coupling flows have the best chance because
-        their scale parameter directly models changing widths.
+        for all methods.
+        Coupling flows have the best chance because their scale
+        parameter directly models the changing conditional width, but
+        even they require many layers.
 \end{itemize}
 
 
@@ -620,12 +788,55 @@ variables---in our toy model this is a simple $\tanh$ function
 which each layer adds a learned residual to its input
 ($\mathrm{output} = x + F(x)$), making it possible to train very deep
 networks without degradation.
+Note that DINGO uses a \textbf{discrete} flow (a finite composition of
+coupling layers), not a continuous normalizing flow
+(Section~\ref{sec:open}).
+The use of automatic differentiation (AD) for computing parameter
+gradients during \emph{training} does not make the flow itself
+continuous---AD replaces our finite-difference gradient hack with exact
+backpropagation, but the learned map $f_\theta$ is still a fixed
+sequence of discrete layers.
 Crucially, DINGO uses \emph{simulation-based inference}: it trains on
 simulated pairs $(\theta_i, d_i) \sim p(\theta)\,p(d|\theta)$ and
 learns the conditional posterior $p(\theta | d)$ amortized over many
 possible datasets.
 This means a single trained network can produce posteriors for new
 events in seconds, without retraining.
+
+\paragraph{Overlapping signals.}
+Third-generation detectors (Einstein Telescope, Cosmic Explorer) will
+have detection rates high enough that CBC signals routinely overlap in
+time.
+Joint parameter estimation of overlapping events is preferable to
+hierarchical analysis but is computationally demanding with traditional
+samplers.
+Langendorff et~al.\ \cite{langendorff2023} demonstrated a
+proof-of-concept using \emph{conditional continuous normalizing flows}
+for this problem.
+The key ideas: (i)~the flow is \emph{conditional}---the transformation
+$f_\theta(z; d)$ depends on the observed data $d$, so a single trained
+network produces posteriors for different datasets without retraining
+(as in DINGO); (ii)~the flow is \emph{continuous}---rather than a
+fixed sequence of discrete coupling layers, the transformation is
+defined by a neural ODE (Section~\ref{sec:open}), with the velocity
+field parameterized by a hypernetwork whose external inputs smoothly
+modulate the dynamics.
+The continuous formulation keeps the memory footprint small (no need to
+store activations at every discrete layer for backpropagation), and
+the conditional structure means the 3D Gaussian base is mapped to the
+complex joint posterior of overlapping events by minimizing the KL
+divergence.
+Results show slightly widened posteriors compared to full MCMC, but
+injected values are always recovered, and inference is orders of
+magnitude faster after training.
+
+\paragraph{Population inference.}
+Cheung et~al.\ \cite{cheung2022} tested normalizing flows as
+likelihood emulators for GW population inference, finding that flows
+successfully recover population posteriors using up to 300 mock
+injections where Gaussian process regression fails in high dimensions.
+The caveat: flows can underestimate uncertainty on real data, so
+validation against traditional methods remains essential.
 
 \paragraph{nessai} \cite{williams2021} combines normalizing flows with
 nested sampling, using the flow as a proposal distribution to
@@ -670,22 +881,79 @@ comparison against short MCMC runs.
 Use the trained flow as a proposal distribution for
 Metropolis--Hastings or Hamiltonian Monte Carlo.
 The flow provides good proposals (high acceptance rate), while
-MCMC guarantees asymptotic exactness.
-This gives the best of both worlds: fast convergence from the flow,
-unbiased samples from MCMC.
+MCMC guarantees asymptotic exactness---even if the flow is imperfect.
+Concretely, one draws $z \sim \mathcal{N}(0,I)$, pushes through
+$f_\theta$ to get a proposal $x' = f_\theta(z)$, and accepts or
+rejects via the usual Metropolis ratio using the \emph{true} posterior
+$p(x' \mid d)$.
+Because the flow already approximates $p$, the acceptance rate is high
+(often $> 80\%$), and the chain mixes rapidly even for strongly
+correlated posteriors.
+This also provides a self-consistency check: if the Metropolis chain
+discovers regions of high posterior mass that the flow missed (i.e.,
+modes dropped by the mode-seeking KL), the acceptance rate in those
+regions will be low, flagging the problem.
+The nessai package \cite{williams2021} implements a variant of this
+idea with nested sampling rather than MCMC.
+This combination is arguably the most practical near-term use of
+normalizing flows in GW inference: you get the speed of a flow-based
+proposal with the statistical guarantees of MCMC.
 
-\paragraph{Continuous normalizing flows.}
-Replace discrete layers with a neural ODE \cite{chen2018}:
-\begin{equation}
-  \frac{dx}{dt} = v_\theta(x, t),
-\end{equation}
-where the log-density evolves as
-$\frac{\partial \log q}{\partial t} = -\nabla \cdot v$
-(the instantaneous change-of-variables formula).
-FFJORD \cite{grathwohl2018} made this practical by replacing the
-exact trace with a stochastic Hutchinson estimator.
-This removes the need to choose a fixed number of layers, at the cost
-of solving an ODE during training and sampling.
+\paragraph{A taxonomy of flow architectures.}
+This tutorial covers only three simple layer types.
+The broader landscape, reviewed in \cite{kobyzev2021,papamakarios2021},
+includes several important families:
+\begin{itemize}
+  \item \textbf{Elementwise flows}: apply a scalar bijection $h$ to
+        each dimension independently.
+        The Jacobian is diagonal ($\det J = \prod |h'(x_i)|$), so
+        inversion and density evaluation are trivially cheap---but the
+        transformation cannot capture correlations between dimensions.
+  \item \textbf{Linear flows}: $g(x) = Ax + b$ with $A$ invertible.
+        $\det J = \det A$, which is $O(d^3)$ for a full matrix.
+        In practice, $A$ is restricted to be triangular, diagonal, or
+        orthogonal to keep the cost manageable.
+        Linear flows are not expressive on their own (a Gaussian stays
+        Gaussian) but serve as building blocks---for example, the
+        $1 \times 1$ convolutions in Glow \cite{kingma2018} are learned
+        linear layers that replace fixed permutations.
+  \item \textbf{Autoregressive flows}
+        \cite{kingma2016,papamakarios2017}: generalize triangular linear
+        maps by conditioning each dimension on all preceding ones.
+        The Jacobian is triangular, so $\det J$ is a product of diagonal
+        entries.
+        More expressive per layer than coupling flows, but sampling
+        requires a sequential pass through dimensions (cannot be
+        parallelized).
+        Inverse autoregressive flows (IAF) reverse the direction:
+        fast to sample from, slow for density evaluation.
+  \item \textbf{Residual flows}: $g(x) = x + F(x)$ where $F$ is a
+        neural network with a Lipschitz constraint to ensure
+        invertibility.
+        The Jacobian determinant requires a power-series estimator,
+        making it more expensive than coupling or autoregressive flows.
+  \item \textbf{Continuous normalizing flows}: replace discrete layers
+        with a neural ODE \cite{chen2018}:
+        \begin{equation}
+          \frac{dx}{dt} = v_\theta(x, t),
+        \end{equation}
+        where the log-density evolves as
+        $\frac{\partial \log q}{\partial t} = -\nabla \cdot v$
+        (the instantaneous change-of-variables formula).
+        FFJORD \cite{grathwohl2018} made this practical by replacing the
+        exact trace with a stochastic Hutchinson estimator.
+        This removes the need to choose a fixed number of layers, at the
+        cost of solving an ODE during training and sampling.
+        This is the architecture used by Langendorff et~al.\
+        \cite{langendorff2023} for overlapping GW signals
+        (Section~\ref{sec:gw}).
+\end{itemize}
+Each family makes a different tradeoff between expressiveness,
+inversion cost, and Jacobian computation cost.
+The choice of architecture imposes an inductive bias on the class of
+distributions the flow can represent efficiently, and which architecture
+is best depends on whether the application requires fast sampling, fast
+density evaluation, or both.
 
 \paragraph{Simulation-based inference (SBI).}
 When the likelihood $p(d|\theta)$ is intractable (you can simulate but
@@ -694,6 +962,18 @@ $(\theta, d)$ to learn the conditional posterior amortized over many
 datasets.
 This is the approach used by DINGO for gravitational-wave parameter
 estimation, and is increasingly adopted across physics.
+
+\paragraph{Further open problems.}
+Several questions remain active areas of research:
+the role of the base distribution (usually Gaussian, but other choices
+may provide better inductive biases for specific problems);
+the choice of loss function (alternatives to KL divergence may be
+better suited for certain target geometries);
+flows on non-Euclidean manifolds (relevant when parameters live on
+spheres, tori, or other constrained spaces---e.g., sky location in
+GW inference);
+and flows for discrete distributions, which require fundamentally
+different approaches since smooth bijections are inherently continuous.
 
 
 %======================================================================
@@ -723,8 +1003,8 @@ A helper script for batch export is provided in
 \vspace{1em}
 \noindent\rule{\textwidth}{0.4pt}
 \vspace{0.5em}
-\noindent\textit{Tutorial by Chiara Mingarelli (Yale University /
-Flatiron Institute CCA), 2026.}
+\noindent\textit{Tutorial by Chiara Mingarelli, Abigail Moran, and
+Nicole Khusid (Yale University / Flatiron Institute CCA), 2026.}
 
 
 %======================================================================
@@ -816,6 +1096,16 @@ W.~Grathwohl, R.~T.~Q. Chen, J.~Bettencourt, I.~Sutskever, and D.~Duvenaud,
 ``FFJORD: Free-form continuous dynamics for scalable reversible generative models,''
 \textit{International Conference on Learning Representations (ICLR)}, 2019.
 \href{https://arxiv.org/abs/1810.01367}{arXiv:1810.01367}.
+
+\bibitem{langendorff2023}
+J.~Langendorff, A.~Kolmus, J.~Janquart, and C.~Van Den Broeck,
+``Normalizing flows as an avenue to studying overlapping gravitational wave signals,''
+\textit{Physical Review Letters}, \textbf{130}(17):171402, 2023.
+
+\bibitem{cheung2022}
+D.~H.~T. Cheung, K.~W.~K. Wong, O.~A. Hannuksela, T.~G.~F. Li, and S.~Ho,
+``Testing the robustness of simulation-based gravitational-wave population inference,''
+\textit{Physical Review D}, \textbf{106}(8):083014, 2022.
 
 \end{thebibliography}
 
