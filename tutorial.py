@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.20.2"
+__generated_with = "0.17.6"
 app = marimo.App(width="medium")
 
 
@@ -92,9 +92,7 @@ def _(mo):
 
     $$d(t) = A \sin(2\pi t + \varphi) + n(t), \qquad n \sim \mathcal{N}(0, \sigma^2)$$
 
-    and want to infer the amplitude $A$ and phase $\varphi$. The posterior
-    $p(A, \varphi \mid d)$ has a **curved ridge** — there's a degeneracy between
-    amplitude and phase that creates a banana-shaped distribution.
+    and want to infer the amplitude $A$ and phase $\varphi$.
 
     Let's set this up and see what the posterior looks like.
     """)
@@ -141,7 +139,6 @@ def _(np):
         )
         ll[~mask] = -np.inf
         return ll
-
     return (
         A_RANGE,
         PHI_RANGE,
@@ -278,7 +275,7 @@ def _(mo):
 
     $$\left|\det \frac{\partial f}{\partial z}\right| = \left|1 + u^\top \text{diag}(1 - \tanh^2(w^\top z + b))\, w\right|$$
 
-    which is a scalar — trivially cheap to compute.
+    which is a scalar — trivially cheap to compute, with complexity scaling linearly as the number of latent variables.
 
     One layer can only do a single directional warp — the bump is always
     along $u$, so a single planar layer can't simultaneously stretch in one
@@ -295,6 +292,18 @@ def _(mo):
     The log-determinant of the composition is just the sum of the per-layer
     log-determinants (chain rule). More layers = more expressive, at a
     linear cost in computation.
+
+    **A note on initialization.** The flow parameters are initialized with
+    small random values: $u, w \sim \mathcal{N}(0, 0.3^2)$ and
+    $b \sim \mathcal{N}(0, 0.1^2)$. These modest scales keep the initial
+    map close to the identity — the base Gaussian is only gently deformed
+    before training begins — so the optimizer can make steady, informative
+    progress from the start. If the initialization scales are set too large,
+    the flow immediately warps the distribution into a degenerate region and
+    gradients become uninformative; too small, and many epochs are wasted
+    on negligible updates. The defaults here were tuned for the posteriors
+    in this tutorial; if you introduce a very different target, you may need
+    to retune these scales.
 
     Let's implement this and see what it does to a Gaussian.
     """)
@@ -343,7 +352,6 @@ def _(np):
             log_det += np.log(abs(1 + u @ (dth * w)) + 1e-10)
             x = x + u * th
         return x, log_det
-
     return init_planar, planar_forward
 
 
@@ -401,11 +409,15 @@ def _(mo):
     ## 4. Training: minimizing KL divergence
 
     We want the flow's output distribution $q_\theta$ to match the target
-    posterior $p$. We minimize the forward KL divergence:
+    posterior $p$. We minimize the forward KL divergence,
+
+    $$D_\text{KL}(q_\theta \| p) = \int d\bm{x}\log\frac{q_\theta(\bm{x})}{p(\bm{x}|\bm{d})}q_\theta(\bm{x}).$$
+
+    We leave as a brief exercise for the reader to show that this may be evaluated as
 
     $$D_\text{KL}(q_\theta \| p) = \mathbb{E}_{z \sim \mathcal{N}(0,I)} \left[
     -\log p(f_\theta(z)) - \log\left|\det \frac{\partial f_\theta}{\partial z}\right|
-    \right] + \text{const}$$
+    \right] + \text{const}.$$
 
     **Key insight:** every term is computable without samples from $p$.
 
@@ -425,6 +437,17 @@ def _(mo):
 
     Each training step: draw a batch of $z_i$, push through $f_\theta$, evaluate
     the loss, compute gradients, update $\theta$. An **epoch** is one such update.
+
+    **Bounded parameters via sigmoid.** Our physical parameters live on a
+    bounded domain — $A \in [0.2, 4.5]$ and $\varphi \in [0, 2\pi]$ — but
+    the flow's outputs are unbounded ($\mathbb{R}^2$). We bridge this with a
+    per-dimension sigmoid transform applied *after* the flow:
+    $\theta_i = a_i + (b_i - a_i)\,\sigma(x_i)$, where $\sigma$ is the
+    logistic function and $(a_i, b_i)$ is the parameter range. This maps
+    any real number smoothly into $(a_i, b_i)$. Because this transform has
+    its own Jacobian, we add a $\log|d\sigma/dx_i|$ term to the loss —
+    a small bookkeeping step that keeps the density properly normalized
+    over the physical domain (see `flow_to_physical` and `log_sigmoid_jac`).
 
     Let's train a flow on our sinusoidal posterior and watch it converge.
 
@@ -522,7 +545,6 @@ def _(A_RANGE, PHI_RANGE, np):
                 snapshots.append((epoch, copy.deepcopy(params), base_loss))
 
         return params, loss_history, snapshots
-
     return flow_to_physical, train_flow
 
 
@@ -694,7 +716,6 @@ def _(log_posterior, np):
                 break
             tau_sum += rho
         return max(1, int(n / (1 + 2 * tau_sum)))
-
     return compute_ess, run_mcmc
 
 
@@ -705,7 +726,12 @@ def _(mo):
     flow_epochs_compare = mo.ui.slider(200, 2000, value=800, label="Flow epochs", step=100)
     compare_run_btn = mo.ui.run_button(label="Run comparison")
     mo.hstack([mcmc_steps_slider, flow_layers_compare, flow_epochs_compare, compare_run_btn], gap=2)
-    return compare_run_btn, flow_epochs_compare, flow_layers_compare, mcmc_steps_slider
+    return (
+        compare_run_btn,
+        flow_epochs_compare,
+        flow_layers_compare,
+        mcmc_steps_slider,
+    )
 
 
 @app.cell
@@ -859,7 +885,9 @@ def _(mo):
     RealNVP and the architecture used in production tools like DINGO.
 
     Try different distributions below to see where each architecture
-    succeeds and fails.
+    succeeds and fails. In real-world flows, different layer types are
+    often **mixed and stacked** within a single model — see Section 6b
+    below to experiment with custom architecture combinations.
     """)
     return
 
@@ -918,7 +946,6 @@ def _(np):
             x[:, other] = x[:, other] * np.exp(log_s) + t
             log_det += log_s
         return x, log_det
-
     return coupling_forward, init_coupling, init_radial, radial_forward
 
 
@@ -1119,6 +1146,273 @@ def _(
 @app.cell
 def _(mo):
     mo.md(r"""
+    ## 6b. Build your own architecture
+
+    So far each flow has used a single layer type throughout. In practice,
+    normalizing flows are often built by **mixing different layer types** in
+    a single stack, letting each contribute its geometric strengths:
+
+    - **Planar** layers add cheap directional warps.
+    - **Radial** layers efficiently reshape the spread around a learned center.
+    - **Affine coupling** layers capture nonlinear correlations and conditional scaling.
+
+    Because $\log|\det J|$ for a composed flow is just the sum of per-layer
+    log-determinants, any invertible layer type can follow any other — the
+    bookkeeping is automatic. The cells below let you specify how many of
+    each type to include. Layers are ordered planar → radial → coupling;
+    try different combinations on different distributions and compare against
+    the single-architecture results above.
+
+    > **Note on speed.** Training uses finite-difference gradients
+    > ($2 \times n_\text{params}$ forward passes per epoch), so more total
+    > layers means slower training. Keep the total layer count modest
+    > (≤ 15) if you want results quickly.
+    """)
+    return
+
+
+@app.cell
+def _(np):
+    def init_mixed(n_planar, n_radial, n_coupling, seed=55):
+        """Initialize a mixed-architecture flow (planar, then radial, then coupling)."""
+        rng = np.random.default_rng(seed)
+        params = []
+        for _ in range(n_planar):
+            params.append({
+                "type": "planar",
+                "u": rng.normal(0, 0.3, size=2),
+                "w": rng.normal(0, 0.3, size=2),
+                "b": rng.normal(0, 0.1),
+            })
+        for _ in range(n_radial):
+            params.append({
+                "type": "radial",
+                "z0": rng.normal(0, 0.3, size=2),
+                "log_alpha": rng.normal(0, 0.1),
+                "beta": rng.normal(0, 0.2),
+            })
+        for i in range(n_coupling):
+            params.append({
+                "type": "coupling",
+                "dim": i % 2,
+                "sa1": rng.normal(0, 0.3), "sa2": 0.5 + rng.normal(0, 0.2),
+                "sa3": rng.normal(0, 0.1), "sa4": rng.normal(0, 0.1),
+                "tb1": rng.normal(0, 0.3), "tb2": 0.5 + rng.normal(0, 0.2),
+                "tb3": rng.normal(0, 0.1), "tb4": rng.normal(0, 0.1),
+            })
+        return params
+
+    def mixed_forward(z, params):
+        """Forward pass through a mixed-architecture flow."""
+        x = z.copy()
+        log_det = np.zeros(len(z))
+        for layer in params:
+            ltype = layer["type"]
+            if ltype == "planar":
+                u, w, b = layer["u"], layer["w"], layer["b"]
+                dot = x @ w + b
+                th = np.tanh(dot)
+                dth = 1 - th ** 2
+                psi = dth[:, None] * w[None, :]
+                det_term = 1 + psi @ u
+                log_det += np.log(np.abs(det_term) + 1e-10)
+                x = x + np.outer(th, u)
+            elif ltype == "radial":
+                z0, log_alpha, beta = layer["z0"], layer["log_alpha"], layer["beta"]
+                alpha = np.exp(log_alpha) + 0.01
+                diff = x - z0[None, :]
+                r = np.sqrt(np.sum(diff ** 2, axis=1)) + 1e-8
+                h = 1.0 / (alpha + r)
+                hp = -h ** 2
+                scale = 1 + beta * h
+                det = scale * (scale + r * beta * hp)
+                log_det += np.log(np.abs(det) + 1e-10)
+                x = x + beta * (h[:, None] * diff)
+            elif ltype == "coupling":
+                d = layer["dim"]
+                other = 1 - d
+                cond = x[:, d]
+                log_s = layer["sa1"] * np.tanh(layer["sa2"] * cond + layer["sa3"]) + layer["sa4"]
+                shift = layer["tb1"] * np.tanh(layer["tb2"] * cond + layer["tb3"]) + layer["tb4"]
+                x[:, other] = x[:, other] * np.exp(log_s) + shift
+                log_det += log_s
+        return x, log_det
+    return init_mixed, mixed_forward
+
+
+@app.cell
+def _(mo):
+    mixed_n_planar = mo.ui.slider(0, 10, value=4, label="Planar layers", step=1)
+    mixed_n_radial = mo.ui.slider(0, 10, value=4, label="Radial layers", step=1)
+    mixed_n_coupling = mo.ui.slider(0, 10, value=4, label="Coupling layers", step=1)
+    mixed_dist_sel = mo.ui.dropdown(
+        options={
+            "Sinusoid (A, φ)": "sinusoid",
+            "Banana (Rosenbrock)": "banana",
+            "Triple mode": "triplemode",
+            "Ring": "ring",
+            "Funnel (Neal)": "funnel",
+        },
+        value="Sinusoid (A, φ)",
+        label="Target distribution",
+    )
+    mixed_epochs_slider = mo.ui.slider(200, 2000, value=800, label="Training epochs", step=200)
+    mixed_run_btn = mo.ui.run_button(label="Train mixed flow")
+    mo.vstack([
+        mo.hstack([mixed_n_planar, mixed_n_radial, mixed_n_coupling], gap=2),
+        mo.hstack([mixed_dist_sel, mixed_epochs_slider, mixed_run_btn], gap=2),
+    ])
+    return (
+        mixed_dist_sel,
+        mixed_epochs_slider,
+        mixed_n_coupling,
+        mixed_n_planar,
+        mixed_n_radial,
+        mixed_run_btn,
+    )
+
+
+@app.cell
+def _(
+    GridSpec,
+    flow_to_physical,
+    init_mixed,
+    mixed_dist_sel,
+    mixed_epochs_slider,
+    mixed_forward,
+    mixed_n_coupling,
+    mixed_n_planar,
+    mixed_n_radial,
+    mixed_run_btn,
+    mo,
+    np,
+    plt,
+    test_distributions,
+    train_flow,
+):
+    mo.stop(
+        not mixed_run_btn.value,
+        mo.md("*Adjust sliders above, then click **Train mixed flow** to run.*"),
+    )
+
+    _n_planar = mixed_n_planar.value
+    _n_radial = mixed_n_radial.value
+    _n_coupling = mixed_n_coupling.value
+    _total_layers = _n_planar + _n_radial + _n_coupling
+    _nE_mix = mixed_epochs_slider.value
+    _dist_key_mix = mixed_dist_sel.value
+    _dist_mix = test_distributions[_dist_key_mix]
+    _ranges_mix = _dist_mix["ranges"]
+    _log_p_mix = _dist_mix["log_p"]
+
+    mo.stop(
+        _total_layers == 0,
+        mo.md("*Set at least one layer to train.*"),
+    )
+
+    # Exact posterior grid
+    _GN_mix = 80
+    _v0_mix = np.linspace(_ranges_mix[0][0], _ranges_mix[0][1], _GN_mix)
+    _v1_mix = np.linspace(_ranges_mix[1][0], _ranges_mix[1][1], _GN_mix)
+    _g0_mix, _g1_mix = np.meshgrid(_v0_mix, _v1_mix)
+    _lp_mix = np.array([
+        [_log_p_mix(_g0_mix[j, i], _g1_mix[j, i]) for i in range(_GN_mix)]
+        for j in range(_GN_mix)
+    ])
+    _lp_mix[~np.isfinite(_lp_mix)] = -1e10
+    _pgrid_mix = np.exp(_lp_mix - np.max(_lp_mix))
+    _d0_mix = (_ranges_mix[0][1] - _ranges_mix[0][0]) / _GN_mix
+    _d1_mix = (_ranges_mix[1][1] - _ranges_mix[1][0]) / _GN_mix
+    _em0_mix = np.sum(_pgrid_mix, axis=0); _em0_mix /= np.sum(_em0_mix) * _d0_mix
+    _em1_mix = np.sum(_pgrid_mix, axis=1); _em1_mix /= np.sum(_em1_mix) * _d1_mix
+
+    # Train
+    _init_fn_mix = lambda _, seed=55: init_mixed(_n_planar, _n_radial, _n_coupling, seed=seed)
+    _params_mix, _loss_mix, _ = train_flow(
+        _init_fn_mix, mixed_forward, _log_p_mix,
+        n_layers=0, n_epochs=_nE_mix,
+        batch_size=100, lr=0.02, lr_decay=0.0008,
+        ranges=_ranges_mix,
+    )
+
+    # Sample
+    _rng_mix = np.random.default_rng(42)
+    _z_mix = _rng_mix.normal(size=(3000, 2))
+    _fx_mix, _ = mixed_forward(_z_mix, _params_mix)
+    _fphys_mix = flow_to_physical(_fx_mix, _ranges_mix)
+    _mask_mix = (
+        (_fphys_mix[:, 0] >= _ranges_mix[0][0]) & (_fphys_mix[:, 0] <= _ranges_mix[0][1]) &
+        (_fphys_mix[:, 1] >= _ranges_mix[1][0]) & (_fphys_mix[:, 1] <= _ranges_mix[1][1])
+    )
+    _valid_mix = _fphys_mix[_mask_mix]
+
+    _arch_label = f"{_n_planar}P + {_n_radial}R + {_n_coupling}C  ({_total_layers} layers)"
+    _color_mix = "#c080e0"
+
+    _fig_mix = plt.figure(figsize=(13, 8))
+    _gs_mix = GridSpec(2, 2, figure=_fig_mix, hspace=0.4, wspace=0.3)
+
+    # Loss curve
+    _ax_loss = _fig_mix.add_subplot(_gs_mix[0, 0])
+    _ax_loss.plot(range(1, len(_loss_mix) + 1), _loss_mix, color=_color_mix, lw=1)
+    _ax_loss.set_xlabel("Epoch")
+    _ax_loss.set_ylabel("Loss (KL divergence)")
+    _ax_loss.set_title(f"Training loss — {_arch_label}", fontsize=10)
+    if len(_loss_mix) > 50:
+        _ym = min(_loss_mix[50:]); _yM = max(_loss_mix[50:])
+        _mg = (_yM - _ym) * 0.2
+        _ax_loss.set_ylim(_ym - _mg, _yM + _mg)
+
+    # 2D scatter
+    _ax_2d = _fig_mix.add_subplot(_gs_mix[0, 1])
+    _ax_2d.contourf(_v0_mix, _v1_mix, _pgrid_mix, levels=15, cmap="viridis", alpha=0.25)
+    if len(_valid_mix) > 0:
+        _ax_2d.scatter(_valid_mix[:, 0], _valid_mix[:, 1], s=0.5, alpha=0.3,
+                      color=_color_mix, rasterized=True)
+    _ax_2d.set_xlim(_ranges_mix[0])
+    _ax_2d.set_ylim(_ranges_mix[1])
+    _ax_2d.set_xlabel(_dist_mix["labels"][0])
+    _ax_2d.set_ylabel(_dist_mix["labels"][1])
+    _ax_2d.set_title("Mixed flow samples", fontsize=10)
+    if _dist_mix["true_vals"] is not None:
+        _ax_2d.plot(_dist_mix["true_vals"][0], _dist_mix["true_vals"][1], "w+",
+                   markersize=8, mew=1)
+
+    # Marginal dim 0
+    _ax_m0 = _fig_mix.add_subplot(_gs_mix[1, 0])
+    _ax_m0.plot(_v0_mix, _em0_mix, color="#3cb8c8", lw=1.5, label="exact")
+    if len(_valid_mix) > 0:
+        _ax_m0.hist(_valid_mix[:, 0], bins=45, density=True, alpha=0.5,
+                   color=_color_mix, label="mixed flow")
+    if _dist_mix["true_vals"] is not None:
+        _ax_m0.axvline(_dist_mix["true_vals"][0], color="white", ls="--", lw=0.7, alpha=0.4)
+    _ax_m0.set_xlabel(_dist_mix["labels"][0])
+    _ax_m0.set_ylabel(f"p({_dist_mix['labels'][0]} | d)")
+    _ax_m0.legend(fontsize=8)
+
+    # Marginal dim 1
+    _ax_m1 = _fig_mix.add_subplot(_gs_mix[1, 1])
+    _ax_m1.plot(_v1_mix, _em1_mix, color="#3cb8c8", lw=1.5, label="exact")
+    if len(_valid_mix) > 0:
+        _ax_m1.hist(_valid_mix[:, 1], bins=45, density=True, alpha=0.5,
+                   color=_color_mix, label="mixed flow")
+    if _dist_mix["true_vals"] is not None:
+        _ax_m1.axvline(_dist_mix["true_vals"][1], color="white", ls="--", lw=0.7, alpha=0.4)
+    _ax_m1.set_xlabel(_dist_mix["labels"][1])
+    _ax_m1.set_ylabel(f"p({_dist_mix['labels'][1]} | d)")
+    _ax_m1.legend(fontsize=8)
+
+    _fig_mix.suptitle(
+        f"{_dist_mix['name']} — mixed architecture: {_arch_label}, {_nE_mix} epochs",
+        fontsize=12, y=1.02,
+    )
+    _fig_mix
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
     ## 7. From toy models to gravitational-wave inference
 
     Everything we've built here uses **2D** posteriors with **5–8 parameters
@@ -1198,7 +1492,7 @@ def _(mo):
 
     ---
 
-    *Tutorial by Chiara Mingarelli, Abigail Moran, and Nicole Khusid
+    *Tutorial by Chiara Mingarelli, Abigail Moran, Nicole Khusid, and Bjorn Larsen
     (Yale / Flatiron CCA). Built with [marimo](https://marimo.io).*
     """)
     return
